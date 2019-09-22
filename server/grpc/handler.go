@@ -1,10 +1,9 @@
 package grpc
 
 import (
-	"reflect"
-
 	"github.com/micro/go-micro/registry"
 	"github.com/micro/go-micro/server"
+	"reflect"
 )
 
 type rpcHandler struct {
@@ -18,17 +17,19 @@ func newRpcHandler(handler interface{}, opts ...server.HandlerOption) server.Han
 	options := server.HandlerOptions{
 		Metadata: make(map[string]map[string]string),
 	}
-
+	// 调用每个可以修改options的函数
 	for _, o := range opts {
 		o(&options)
 	}
-
+	// 取出实现接口的类型信息
 	typ := reflect.TypeOf(handler)
+	// 取出实现接口的值信息，hdlr是指针类型
 	hdlr := reflect.ValueOf(handler)
+	// 指针类型指向的类型名称
 	name := reflect.Indirect(hdlr).Type().Name()
 
 	var endpoints []*registry.Endpoint
-
+	// 提取出每一个方法，构造表示方法的Endpoint对象数组
 	for m := 0; m < typ.NumMethod(); m++ {
 		if e := extractEndpoint(typ.Method(m)); e != nil {
 			e.Name = name + "." + e.Name

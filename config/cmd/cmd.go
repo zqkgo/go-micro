@@ -187,6 +187,8 @@ var (
 		"grpc": cgrpc.NewClient,
 	}
 
+	// 每种组件维护一个map，存储命令行参数值到实例的映射
+	// 例如，如果指定--registry=consul，则使用consul.NewRegistry返回的实例
 	DefaultRegistries = map[string]func(...registry.Option) registry.Registry{
 		"consul": consul.NewRegistry,
 		"gossip": gossip.NewRegistry,
@@ -317,12 +319,14 @@ func (c *cmd) Before(ctx *cli.Context) error {
 	}
 
 	// Set the registry
+	// 如果命令行参数--registry=consul与默认的registry(mdns)不同
+	// 则从c.opts.Registries的map中找到相应的创建函数并执行之
 	if name := ctx.String("registry"); len(name) > 0 && (*c.opts.Registry).String() != name {
 		r, ok := c.opts.Registries[name]
 		if !ok {
 			return fmt.Errorf("Registry %s not found", name)
 		}
-
+		// 修改原地址上的值为新的registry
 		*c.opts.Registry = r()
 		serverOpts = append(serverOpts, server.Registry(*c.opts.Registry))
 		clientOpts = append(clientOpts, client.Registry(*c.opts.Registry))

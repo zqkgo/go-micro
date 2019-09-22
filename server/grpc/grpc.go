@@ -66,6 +66,7 @@ func init() {
 }
 
 func newGRPCServer(opts ...server.Option) server.Server {
+	// 创建server.Options对象，调用修改方法，赋默认值
 	options := newOptions(opts...)
 
 	// create a grpc server

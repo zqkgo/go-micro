@@ -13,14 +13,14 @@ type Node struct {
 	Address  string            `json:"address"`
 	Metadata map[string]string `json:"metadata"`
 }
-
+// Endpoint表示一个方法
 type Endpoint struct {
 	Name     string            `json:"name"`
 	Request  *Value            `json:"request"`
 	Response *Value            `json:"response"`
 	Metadata map[string]string `json:"metadata"`
 }
-
+// Value表示参数（变量）信息
 type Value struct {
 	Name   string   `json:"name"`
 	Type   string   `json:"type"`

@@ -23,8 +23,9 @@ type service struct {
 }
 
 func newService(opts ...Option) Service {
+	// 拿到的opts实际上是若干Option类型的函数
 	options := newOptions(opts...)
-
+	// 包含服务客户端和头信息的包裹对象
 	options.Client = &clientWrapper{
 		options.Client,
 		metadata.Metadata{
@@ -40,6 +41,9 @@ func newService(opts ...Option) Service {
 // Init initialises options. Additionally it calls cmd.Init
 // which parses command line flags. cmd.Init is only called
 // on first Init.
+// Init方法也会更新service持有的Options对象，所以传递给newService的参数
+// 也可以传给Init方法。 因为很多选项（name, ttl, register interval...）
+// 是设置为server、client等组件，所以要先设置组件，再设置属性才能生效。
 func (s *service) Init(opts ...Option) {
 	// process options
 	for _, o := range opts {
@@ -48,6 +52,8 @@ func (s *service) Init(opts ...Option) {
 
 	s.once.Do(func() {
 		// setup the plugins
+		// 处理用逗号分割的插件路径
+		// 插件？TODO: 需要看看Go内置的plugin包
 		for _, p := range strings.Split(os.Getenv("MICRO_PLUGIN"), ",") {
 			if len(p) == 0 {
 				continue
@@ -66,6 +72,9 @@ func (s *service) Init(opts ...Option) {
 		}
 
 		// Initialise the command flags, overriding new service
+		// 将service的Options所持有的组件Broker、Registry、Transport等
+		// 的 地址 作为参数 构造 可以设置cmd的Options对象 的函数。之所以传
+		// 地址，是为了能够让Cmd对象根据传入的命令行参数 修改这些组件的实例。
 		_ = s.opts.Cmd.Init(
 			cmd.Broker(&s.opts.Broker),
 			cmd.Registry(&s.opts.Registry),

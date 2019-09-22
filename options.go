@@ -14,10 +14,14 @@ import (
 	"github.com/micro/go-micro/transport"
 )
 
+// Options对象用来保存某种对象的若干选项
 type Options struct {
-	Broker    broker.Broker
-	Cmd       cmd.Cmd
-	Client    client.Client
+	Broker broker.Broker
+	// Cmd对象用来处理命令行参数
+	Cmd    cmd.Cmd
+	// 服务的客户端，默认rpc客户端
+	Client client.Client
+	// 服务的服务端，默认rpc服务端
 	Server    server.Server
 	Registry  registry.Registry
 	Transport transport.Transport
@@ -33,6 +37,9 @@ type Options struct {
 	Context context.Context
 }
 
+// 首先会创建一个Options对象，Options对象所持有的客户端、服务端、注册中心等
+// 都是默认值，每一种组件（配置项）都有一个默认值。然后根据调用方指定的配置（参数）更新
+// Options对象，这种工作由Cmd对象通过解析命令行参数和修改指针完成。
 func newOptions(opts ...Option) Options {
 	opt := Options{
 		Broker:    broker.DefaultBroker,
@@ -43,7 +50,7 @@ func newOptions(opts ...Option) Options {
 		Transport: transport.DefaultTransport,
 		Context:   context.Background(),
 	}
-
+	// 因为Option是函数类型，所以可以修改Options对象
 	for _, o := range opts {
 		o(&opt)
 	}
@@ -130,6 +137,9 @@ func Address(addr string) Option {
 }
 
 // Name of the service
+// 构造一个Option类型函数，更新的是Service -> Options -> Server -> Options -> Name
+// 所以service的名称，实际是service所持有的server的名称。该名称作为服务发现的服务名，例如go.micro.srv.save
+// 需要在func Server()之后调用该方法，否则对应的server会使用默认名称。
 func Name(n string) Option {
 	return func(o *Options) {
 		o.Server.Init(server.Name(n))

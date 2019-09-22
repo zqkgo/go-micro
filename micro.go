@@ -13,6 +13,7 @@ type serviceKey struct{}
 // Service is an interface that wraps the lower level libraries
 // within go-micro. Its a convenience method for building
 // and initialising services.
+//
 type Service interface {
 	Init(...Option)
 	Options() Options
@@ -39,6 +40,9 @@ type Publisher interface {
 	Publish(ctx context.Context, msg interface{}, opts ...client.PublishOption) error
 }
 
+// 函数类型，其作用是使传入的Options对象可以被修改。
+// 例如在newOptions()时候先创建一个Options对象，然后
+// 调用该类型的函数修改Options对象
 type Option func(*Options)
 
 var (

@@ -18,6 +18,7 @@ import (
 // Server is a simple micro server abstraction
 type Server interface {
 	Options() Options
+	// Init()的主要作用是更新Server的Options对象
 	Init(...Option) error
 	Handle(Handler) error
 	NewHandler(interface{}, ...HandlerOption) Handler

@@ -62,6 +62,7 @@ func extractValue(v reflect.Type, d int) *registry.Value {
 }
 
 func extractEndpoint(method reflect.Method) *registry.Endpoint {
+	// 非exported则略过
 	if method.PkgPath != "" {
 		return nil
 	}
@@ -69,11 +70,11 @@ func extractEndpoint(method reflect.Method) *registry.Endpoint {
 	var rspType, reqType reflect.Type
 	var stream bool
 	mt := method.Type
-
+	// 方法的入参个数
 	switch mt.NumIn() {
 	case 3:
-		reqType = mt.In(1)
-		rspType = mt.In(2)
+		reqType = mt.In(1) // 取第二个参数（请求对象）的类型
+		rspType = mt.In(2) // 取第三个参数（响应对象）的类型
 	case 4:
 		reqType = mt.In(2)
 		rspType = mt.In(3)

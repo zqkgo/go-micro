@@ -17,6 +17,7 @@ type Options struct {
 	Registry     registry.Registry
 	Transport    transport.Transport
 	Metadata     map[string]string
+	// 服务端名称，用来进行服务发现，例如go.micro.srv.save
 	Name         string
 	Address      string
 	Advertise    string
@@ -28,8 +29,10 @@ type Options struct {
 	// RegisterCheck runs a check function before registering the service
 	RegisterCheck func(context.Context) error
 	// The register expiry time
+	// 服务注册的超时时间
 	RegisterTTL time.Duration
 	// The interval on which to register
+	// 服务注册的时间间隔
 	RegisterInterval time.Duration
 
 	// The router for requests
@@ -40,6 +43,7 @@ type Options struct {
 	Context context.Context
 }
 
+// 创建server所持有的Options对象，如果指定配置项则使用默认配置
 func newOptions(opt ...Option) Options {
 	opts := Options{
 		Codecs:   make(map[string]codec.NewCodec),

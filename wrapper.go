@@ -7,11 +7,18 @@ import (
 	"github.com/micro/go-micro/metadata"
 )
 
+// 包含服务客户端和头信息的包裹对象
 type clientWrapper struct {
+	// 可以向服务发起请求的客户端
 	client.Client
+	// 头信息
 	headers metadata.Metadata
 }
 
+// 创建一个包含头信息的新ctx
+// 1. 提取ctx中旧的头信息
+// 2. 复制旧的头信息，整合现有头信息
+// 3. 复制一个新的ctx，包含整合后的头信息
 func (c *clientWrapper) setHeaders(ctx context.Context) context.Context {
 	// copy metadata
 	mda, _ := metadata.FromContext(ctx)

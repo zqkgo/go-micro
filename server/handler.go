@@ -4,8 +4,11 @@ import "context"
 
 type HandlerOption func(*HandlerOptions)
 
+// 实现服务端接口的对象(Handler)持有的选项
 type HandlerOptions struct {
 	Internal bool
+	// 存储服务所有的方法的头信息
+	// 服务名.方法名 -> 头信息，例如：Save.Categories => 头信息
 	Metadata map[string]map[string]string
 }
 
