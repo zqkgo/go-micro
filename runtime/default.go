@@ -2,7 +2,7 @@ package runtime
 
 import (
 	"errors"
-	"os"
+	"io"
 	"strings"
 	"sync"
 	"time"
@@ -32,6 +32,9 @@ type service struct {
 	closed  chan bool
 	err     error
 
+	// output for logs
+	output io.Writer
+
 	// service to manage
 	*Service
 	// process creator
@@ -50,13 +53,25 @@ func newRuntime() *runtime {
 	}
 }
 
-func newService(s *Service) *service {
-	parts := strings.Split(s.Exec, " ")
-	exec := parts[0]
-	args := []string{}
+func newService(s *Service, c CreateOptions) *service {
+	var exec string
+	var args []string
 
-	if len(parts) > 1 {
-		args = parts[1:]
+	if len(s.Exec) > 0 {
+		parts := strings.Split(s.Exec, " ")
+		exec = parts[0]
+		args = []string{}
+
+		if len(parts) > 1 {
+			args = parts[1:]
+		}
+	} else {
+		// set command
+		exec = c.Command[0]
+		// set args
+		if len(c.Command) > 1 {
+			args = c.Command[1:]
+		}
 	}
 
 	return &service{
@@ -67,10 +82,16 @@ func newService(s *Service) *service {
 				Name: s.Name,
 				Path: exec,
 			},
-			Env:  os.Environ(),
+			Env:  c.Env,
 			Args: args,
 		},
+		output: c.Output,
 	}
+}
+
+func (s *service) streamOutput() {
+	go io.Copy(s.output, s.PID.Output)
+	go io.Copy(s.output, s.PID.Error)
 }
 
 func (s *service) Running() bool {
@@ -92,7 +113,7 @@ func (s *service) Start() error {
 	s.closed = make(chan bool)
 
 	// TODO: pull source & build binary
-
+	log.Debugf("Runtime service %s forking new process\n")
 	p, err := s.Process.Fork(s.Exec)
 	if err != nil {
 		return err
@@ -102,6 +123,10 @@ func (s *service) Start() error {
 	s.PID = p
 	// set to running
 	s.running = true
+
+	if s.output != nil {
+		s.streamOutput()
+	}
 
 	// wait and watch
 	go s.Wait()
@@ -147,7 +172,49 @@ func (s *service) Wait() {
 	s.running = false
 }
 
-func (r *runtime) Create(s *Service) error {
+func (r *runtime) run() {
+	r.RLock()
+	closed := r.closed
+	r.RUnlock()
+
+	t := time.NewTicker(time.Second * 5)
+	defer t.Stop()
+
+	for {
+		select {
+		case <-t.C:
+			// check running services
+			r.RLock()
+			for _, service := range r.services {
+				if service.Running() {
+					continue
+				}
+
+				// TODO: check service error
+				log.Debugf("Runtime starting %s", service.Name)
+				if err := service.Start(); err != nil {
+					log.Debugf("Runtime error starting %s: %v", service.Name, err)
+				}
+			}
+			r.RUnlock()
+		case service := <-r.start:
+			if service.Running() {
+				continue
+			}
+
+			// TODO: check service error
+			log.Debugf("Starting %s", service.Name)
+			if err := service.Start(); err != nil {
+				log.Debugf("Runtime error starting %s: %v", service.Name, err)
+			}
+		case <-closed:
+			// TODO: stop all the things
+			return
+		}
+	}
+}
+
+func (r *runtime) Create(s *Service, opts ...CreateOption) error {
 	r.Lock()
 	defer r.Unlock()
 
@@ -155,8 +222,17 @@ func (r *runtime) Create(s *Service) error {
 		return errors.New("service already registered")
 	}
 
+	var options CreateOptions
+	for _, o := range opts {
+		o(&options)
+	}
+
+	if len(s.Exec) == 0 && len(options.Command) == 0 {
+		return errors.New("missing exec command")
+	}
+
 	// save service
-	r.services[s.Name] = newService(s)
+	r.services[s.Name] = newService(s, options)
 
 	// push into start queue
 	r.start <- r.services[s.Name]
@@ -178,55 +254,18 @@ func (r *runtime) Delete(s *Service) error {
 
 func (r *runtime) Start() error {
 	r.Lock()
+	defer r.Unlock()
 
 	// already running
 	if r.running {
-		r.Unlock()
 		return nil
 	}
 
 	// set running
 	r.running = true
 	r.closed = make(chan bool)
-	closed := r.closed
 
-	r.Unlock()
-
-	t := time.NewTicker(time.Second * 5)
-	defer t.Stop()
-
-	for {
-		select {
-		case <-t.C:
-			// check running services
-			r.RLock()
-			for _, service := range r.services {
-				if service.Running() {
-					continue
-				}
-
-				// TODO: check service error
-				log.Debugf("Starting %s", service.Name)
-				if err := service.Start(); err != nil {
-					log.Debugf("Error starting %s: %v", service.Name, err)
-				}
-			}
-			r.RUnlock()
-		case service := <-r.start:
-			if service.Running() {
-				continue
-			}
-
-			// TODO: check service error
-			log.Debugf("Starting %s", service.Name)
-			if err := service.Start(); err != nil {
-				log.Debugf("Error starting %s: %v", service.Name, err)
-			}
-		case <-closed:
-			// TODO: stop all the things
-			return nil
-		}
-	}
+	go r.run()
 
 	return nil
 }
@@ -250,6 +289,7 @@ func (r *runtime) Stop() error {
 
 		// stop all the services
 		for _, service := range r.services {
+			log.Debugf("Runtime stopping %s", service.Name)
 			service.Stop()
 		}
 	}

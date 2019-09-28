@@ -47,8 +47,10 @@ type Options struct {
 // 创建server所持有的Options对象，如果指定配置项则使用默认配置
 func newOptions(opt ...Option) Options {
 	opts := Options{
-		Codecs:   make(map[string]codec.NewCodec),
-		Metadata: map[string]string{},
+		Codecs:           make(map[string]codec.NewCodec),
+		Metadata:         map[string]string{},
+		RegisterInterval: DefaultRegisterInterval,
+		RegisterTTL:      DefaultRegisterTTL,
 	}
 
 	for _, o := range opt {
