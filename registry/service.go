@@ -15,6 +15,7 @@ type Node struct {
 }
 // Endpoint表示一个方法
 type Endpoint struct {
+	// 服务名.方法名
 	Name     string            `json:"name"`
 	Request  *Value            `json:"request"`
 	Response *Value            `json:"response"`

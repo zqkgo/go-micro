@@ -44,13 +44,16 @@ const (
 )
 
 type grpcServer struct {
+	// 什么用？
 	rpc  *rServer
 	srv  *grpc.Server
 	exit chan chan error
+	// 通过
 	wg   *sync.WaitGroup
 
 	sync.RWMutex
 	opts        server.Options
+	// 服务名 -> 服务handler，即一个server可以同时提供多个服务
 	handlers    map[string]server.Handler
 	subscribers map[*subscriber][]broker.Subscriber
 	// marks the serve as started
@@ -106,7 +109,7 @@ func (g *grpcServer) configure(opts ...server.Option) {
 	}
 
 	maxMsgSize := g.getMaxMsgSize()
-
+	// grpc配置项
 	gopts := []grpc.ServerOption{
 		grpc.MaxRecvMsgSize(maxMsgSize),
 		grpc.MaxSendMsgSize(maxMsgSize),
@@ -124,6 +127,7 @@ func (g *grpcServer) configure(opts ...server.Option) {
 	g.srv = grpc.NewServer(gopts...)
 }
 
+// 获取server能发送或接受的最大message大小，如果context中没有则使用默认大小
 func (g *grpcServer) getMaxMsgSize() int {
 	if g.opts.Context == nil {
 		return DefaultMaxMsgSize
@@ -165,6 +169,8 @@ func (g *grpcServer) getGrpcOptions() []grpc.ServerOption {
 	return opts
 }
 
+// 自定义的未知服务或方法的回调，注册给grpc
+// 当访问未注册的服务或方法时调用此方法
 func (g *grpcServer) handler(srv interface{}, stream grpc.ServerStream) error {
 	if g.wg != nil {
 		g.wg.Add(1)

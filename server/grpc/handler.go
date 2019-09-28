@@ -7,12 +7,14 @@ import (
 )
 
 type rpcHandler struct {
-	name      string
-	handler   interface{}
+	name    string
+	handler interface{}
+	// 服务的方法集合
 	endpoints []*registry.Endpoint
 	opts      server.HandlerOptions
 }
 
+// 构造提供服务的对象
 func newRpcHandler(handler interface{}, opts ...server.HandlerOption) server.Handler {
 	options := server.HandlerOptions{
 		Metadata: make(map[string]map[string]string),
@@ -43,10 +45,10 @@ func newRpcHandler(handler interface{}, opts ...server.HandlerOption) server.Han
 	}
 
 	return &rpcHandler{
-		name:      name,
-		handler:   handler,
-		endpoints: endpoints,
-		opts:      options,
+		name:      name,      // 服务名
+		handler:   handler,   // 提供服务的handler
+		endpoints: endpoints, // 服务具体执行的方法数组
+		opts:      options,   // 一些配置项
 	}
 }
 

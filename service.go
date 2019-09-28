@@ -43,7 +43,7 @@ func newService(opts ...Option) Service {
 // on first Init.
 // Init方法也会更新service持有的Options对象，所以传递给newService的参数
 // 也可以传给Init方法。 因为很多选项（name, ttl, register interval...）
-// 是设置为server、client等组件，所以要先设置组件，再设置属性才能生效。
+// 是设置为server、client等组件，所以要先设置组件，再设置选项才能生效。
 func (s *service) Init(opts ...Option) {
 	// process options
 	for _, o := range opts {

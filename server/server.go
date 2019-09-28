@@ -11,7 +11,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/micro/go-micro/codec"
 	"github.com/micro/go-micro/registry"
-	log "github.com/micro/go-micro/util/log"
+	"github.com/micro/go-micro/util/log"
 )
 
 // Server is a simple micro server abstraction
@@ -19,7 +19,9 @@ type Server interface {
 	Options() Options
 	// Init()的主要作用是更新Server的Options对象
 	Init(...Option) error
+	// 
 	Handle(Handler) error
+	// 构造服务对象
 	NewHandler(interface{}, ...HandlerOption) Handler
 	NewSubscriber(string, interface{}, ...SubscriberOption) Subscriber
 	Subscribe(Subscriber) error

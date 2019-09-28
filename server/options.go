@@ -12,11 +12,11 @@ import (
 )
 
 type Options struct {
-	Codecs       map[string]codec.NewCodec
-	Broker       broker.Broker
-	Registry     registry.Registry
-	Transport    transport.Transport
-	Metadata     map[string]string
+	Codecs    map[string]codec.NewCodec
+	Broker    broker.Broker
+	Registry  registry.Registry
+	Transport transport.Transport
+	Metadata  map[string]string
 	// 服务端名称，用来进行服务发现，例如go.micro.srv.save
 	Name         string
 	Address      string
@@ -40,6 +40,7 @@ type Options struct {
 
 	// Other options for implementations of the interface
 	// can be stored in a context
+	// 存储其他配置项
 	Context context.Context
 }
 
