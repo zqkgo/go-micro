@@ -14,7 +14,9 @@ import (
 )
 
 type codecsKey struct{}
+// 如果context中配置了tls，会以此struct做key
 type tlsAuth struct{}
+// 如果context中配置了最大消息大小，会以此struct做key
 type maxMsgSizeKey struct{}
 type grpcOptions struct{}
 
@@ -34,6 +36,7 @@ func Codec(contentType string, c encoding.Codec) server.Option {
 }
 
 // AuthTLS should be used to setup a secure authentication using TLS
+// 将TLS配置保存到context
 func AuthTLS(t *tls.Config) server.Option {
 	return func(o *server.Options) {
 		if o.Context == nil {

@@ -40,7 +40,7 @@ type Options struct {
 
 	// Other options for implementations of the interface
 	// can be stored in a context
-	// 存储其他配置项
+	// 存储其他配置项，例如TLS配置、message大小最大值等等
 	Context context.Context
 }
 

@@ -45,14 +45,15 @@ const (
 
 type grpcServer struct {
 	// 什么用？
-	rpc  *rServer
+	rpc *rServer
+	// grpc server对象，实际处理grpc请求的对象
 	srv  *grpc.Server
 	exit chan chan error
 	// 通过
-	wg   *sync.WaitGroup
+	wg *sync.WaitGroup
 
 	sync.RWMutex
-	opts        server.Options
+	opts server.Options
 	// 服务名 -> 服务handler，即一个server可以同时提供多个服务
 	handlers    map[string]server.Handler
 	subscribers map[*subscriber][]broker.Subscriber
@@ -98,6 +99,8 @@ func (r grpcRouter) ServeRequest(ctx context.Context, req server.Request, rsp se
 	return r.h(ctx, req, rsp)
 }
 
+// 根据默认或自定义配置构造grpc server对象
+// 配置项包括message大小最大值、TLS配置等等
 func (g *grpcServer) configure(opts ...server.Option) {
 	// Don't reprocess where there's no config
 	if len(opts) == 0 && g.srv != nil {
@@ -115,11 +118,11 @@ func (g *grpcServer) configure(opts ...server.Option) {
 		grpc.MaxSendMsgSize(maxMsgSize),
 		grpc.UnknownServiceHandler(g.handler),
 	}
-
+	// TLS配置
 	if creds := g.getCredentials(); creds != nil {
 		gopts = append(gopts, grpc.Creds(creds))
 	}
-
+	// 其他配置项（数组）
 	if opts := g.getGrpcOptions(); opts != nil {
 		gopts = append(gopts, opts...)
 	}
@@ -159,7 +162,7 @@ func (g *grpcServer) getGrpcOptions() []grpc.ServerOption {
 	if v == nil {
 		return nil
 	}
-
+	// 使用type assertion提取interface的concrete type
 	opts, ok := v.([]grpc.ServerOption)
 
 	if !ok {
