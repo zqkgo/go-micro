@@ -44,7 +44,7 @@ const (
 )
 
 type grpcServer struct {
-	// 什么用？
+	// 提取、保存服务名称到服务信息的映射
 	rpc *rServer
 	// grpc server对象，实际处理grpc请求的对象
 	srv  *grpc.Server
@@ -86,6 +86,7 @@ func newGRPCServer(opts ...server.Option) server.Server {
 	}
 
 	// configure the grpc server
+	// 根据默认或自定义配置构造grpc server对象
 	srv.configure()
 
 	return srv
@@ -491,7 +492,7 @@ func (g *grpcServer) Handle(h server.Handler) error {
 	if err := g.rpc.register(h.Handler()); err != nil {
 		return err
 	}
-
+	// 服务名 -> 服务handler(例如：rpcHandler)，即一个server可以同时提供多个服务
 	g.handlers[h.Name()] = h
 	return nil
 }

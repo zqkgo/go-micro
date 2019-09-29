@@ -8,6 +8,7 @@ import (
 
 type rpcHandler struct {
 	name    string
+	// request handler，处理请求的handler
 	handler interface{}
 	// 服务的方法集合
 	endpoints []*registry.Endpoint
@@ -46,7 +47,7 @@ func newRpcHandler(handler interface{}, opts ...server.HandlerOption) server.Han
 
 	return &rpcHandler{
 		name:      name,      // 服务名
-		handler:   handler,   // 提供服务的handler
+		handler:   handler,   // request handler
 		endpoints: endpoints, // 服务具体执行的方法数组
 		opts:      options,   // 一些配置项
 	}

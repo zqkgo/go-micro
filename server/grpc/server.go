@@ -32,17 +32,18 @@ type methodType struct {
 	stream      bool
 }
 
+// 服务信息
 type service struct {
 	name   string                 // name of service
 	rcvr   reflect.Value          // receiver of methods for the service
 	typ    reflect.Type           // type of the receiver
-	method map[string]*methodType // registered methods
+	method map[string]*methodType // registered methods | key是方法名
 }
 
 // server represents an RPC Server.
 type rServer struct {
-	mu         sync.Mutex // protects the serviceMap
-	serviceMap map[string]*service
+	mu         sync.Mutex          // protects the serviceMap
+	serviceMap map[string]*service // 服务名称 -> 服务信息
 }
 
 // Is this an exported - upper case - name?
@@ -131,6 +132,7 @@ func prepareEndpoint(method reflect.Method) *methodType {
 	return &methodType{method: method, ArgType: argType, ReplyType: replyType, ContextType: contextType, stream: stream}
 }
 
+// 提取服务信息，构造service对象，保存key->info到map对象
 func (server *rServer) register(rcvr interface{}) error {
 	server.mu.Lock()
 	defer server.mu.Unlock()

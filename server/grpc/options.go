@@ -18,6 +18,7 @@ type codecsKey struct{}
 type tlsAuth struct{}
 // 如果context中配置了最大消息大小，会以此struct做key
 type maxMsgSizeKey struct{}
+// 其他grpc配置项构成的数组保存在context，以此为key
 type grpcOptions struct{}
 
 // gRPC Codec to be used to encode/decode requests for a given content type
