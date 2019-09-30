@@ -9,9 +9,12 @@ import (
 )
 
 type grpcRequest struct {
+	// Service名称，例如go.micro.srv.save
 	service     string
+	// service.method例如Save.Categories
 	method      string
 	contentType string
+	// 请求对象
 	request     interface{}
 	opts        client.RequestOptions
 	codec       codec.Codec

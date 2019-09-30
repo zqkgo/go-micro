@@ -62,6 +62,7 @@ func (g *grpcClient) next(request client.Request, opts client.CallOptions) (sele
 	}
 
 	// return remote address
+	// 如果有代理则直接返回 选择代理节点 的 函数
 	if len(opts.Address) > 0 {
 		return func() (*registry.Node, error) {
 			return &registry.Node{
