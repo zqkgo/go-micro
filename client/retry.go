@@ -7,6 +7,7 @@ import (
 )
 
 // note that returning either false or a non-nil error will result in the call not being retried
+// 判断是否应该重试，false和错误都不会重试
 type RetryFunc func(ctx context.Context, req Request, retryCount int, err error) (bool, error)
 
 // RetryAlways always retry on error

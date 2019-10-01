@@ -518,7 +518,7 @@ func (g *grpcClient) String() string {
 func newClient(opts ...client.Option) client.Client {
 	options := client.Options{
 		Codecs: make(map[string]codec.NewCodec),
-		CallOptions: client.CallOptions{
+		CallOptions: client.CallOptions{ // 和请求相关的配置项
 			Backoff:        client.DefaultBackoff,
 			Retry:          client.DefaultRetry,
 			Retries:        client.DefaultRetries,
