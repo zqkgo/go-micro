@@ -55,6 +55,7 @@ type grpcServer struct {
 	sync.RWMutex
 	opts server.Options
 	// 服务名 -> 服务handler，即一个server可以同时提供多个服务
+	// 注册服务时，根据该成员找到所有handler的endpoints集合
 	handlers    map[string]server.Handler
 	subscribers map[*subscriber][]broker.Subscriber
 	// marks the serve as started
@@ -488,6 +489,9 @@ func (g *grpcServer) NewHandler(h interface{}, opts ...server.HandlerOption) ser
 	return newRpcHandler(h, opts...)
 }
 
+// Handle从参数h中提取服务信息
+// 以服务名为key保存在g.rpc.serviceMap中
+// 并且以服务名为key保存在g.handlers中
 func (g *grpcServer) Handle(h server.Handler) error {
 	if err := g.rpc.register(h.Handler()); err != nil {
 		return err
@@ -541,22 +545,24 @@ func (g *grpcServer) Register() error {
 		advt = config.Address
 	}
 
-	if cnt := strings.Count(advt, ":"); cnt >= 1 {
+	if cnt := strings.Count(advt, ":"); cnt >= 1 { // 包含端口
 		// ipv6 address in format [host]:port or ipv4 host:port
 		host, port, err = net.SplitHostPort(advt)
 		if err != nil {
 			return err
 		}
-	} else {
+	} else { // 只有地址无端口
 		host = advt
 	}
 
+	// 找到本机ip局域网地址
 	addr, err := addr.Extract(host)
 	if err != nil {
 		return err
 	}
 
 	// register service
+	// 服务节点
 	node := &registry.Node{
 		Id:       config.Name + "-" + config.Id,
 		Address:  mnet.HostPort(addr, port),
@@ -571,13 +577,14 @@ func (g *grpcServer) Register() error {
 
 	g.RLock()
 	// Maps are ordered randomly, sort the keys for consistency
-	var handlerList []string
+	var handlerList []string // 服务名数组[srv1, srv2, ...]
 	for n, e := range g.handlers {
 		// Only advertise non internal handlers
 		if !e.Options().Internal {
 			handlerList = append(handlerList, n)
 		}
 	}
+	// 服务名排序
 	sort.Strings(handlerList)
 
 	var subscriberList []*subscriber
@@ -591,6 +598,7 @@ func (g *grpcServer) Register() error {
 		return subscriberList[i].topic > subscriberList[j].topic
 	})
 
+	// 所有"终端"方法
 	var endpoints []*registry.Endpoint
 	for _, n := range handlerList {
 		endpoints = append(endpoints, g.handlers[n].Endpoints()...)
@@ -721,6 +729,7 @@ func (g *grpcServer) Deregister() error {
 }
 
 func (g *grpcServer) Start() error {
+	// 加锁，判断是否已经启动
 	g.RLock()
 	if g.started {
 		g.RUnlock()
@@ -731,6 +740,7 @@ func (g *grpcServer) Start() error {
 	config := g.Options()
 
 	// micro: config.Transport.Listen(config.Address)
+	// 如果配置端口会随机分配端口
 	ts, err := net.Listen("tcp", config.Address)
 	if err != nil {
 		return err
@@ -738,6 +748,7 @@ func (g *grpcServer) Start() error {
 
 	log.Logf("Server [grpc] Listening on %s", ts.Addr().String())
 	g.Lock()
+	// 将地址更新成实际使用的地址，例如随机分配的新端口
 	g.opts.Address = ts.Addr().String()
 	g.Unlock()
 
@@ -752,6 +763,7 @@ func (g *grpcServer) Start() error {
 	log.Logf("Broker [%s] Connected to %s", bname, baddr)
 
 	// announce self to the world
+	// 注册到服务发现
 	if err := g.Register(); err != nil {
 		log.Log("Server register error: ", err)
 	}

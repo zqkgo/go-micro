@@ -19,7 +19,7 @@ type Server interface {
 	Options() Options
 	// Init()的主要作用是更新Server的Options对象
 	Init(...Option) error
-	// 维护服务名到服务信息的映射
+	// 维护 服务名=>服务信息 的映射关系
 	Handle(Handler) error
 	// 构造request handler，处理请求的handler
 	NewHandler(interface{}, ...HandlerOption) Handler

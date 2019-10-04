@@ -49,7 +49,6 @@ func (s *service) Init(opts ...Option) {
 	for _, o := range opts {
 		o(&s.opts)
 	}
-
 	s.once.Do(func() {
 		// setup the plugins
 		// 处理用逗号分割的插件路径
@@ -148,7 +147,7 @@ func (s *service) Run() error {
 	s.opts.Server.Handle(
 		s.opts.Server.NewHandler(
 			handler.DefaultHandler,
-			server.InternalHandler(true),
+			server.InternalHandler(true), // 标识注册到服务发现
 		),
 	)
 

@@ -107,6 +107,7 @@ var (
 	// DefaultRequestTimeout is the default request timeout
 	DefaultRequestTimeout = time.Second * 5
 	// DefaultPoolSize sets the connection pool size
+	// 默认连接池大小
 	DefaultPoolSize = 100
 	// DefaultPoolTTL sets the connection pool ttl
 	DefaultPoolTTL = time.Minute

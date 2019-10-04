@@ -165,7 +165,7 @@ func (c *consulRegistry) Deregister(s *registry.Service) error {
 	return c.Client().Agent().ServiceDeregister(node.Id)
 }
 
-func (c *consulRegistry) Register(s *registry.Service, opts ...registry.RegisterOption) error {
+func (c *consulRegistry) 	Register(s *registry.Service, opts ...registry.RegisterOption) error {
 	if len(s.Nodes) == 0 {
 		return errors.New("Require at least one node")
 	}
@@ -200,13 +200,16 @@ func (c *consulRegistry) Register(s *registry.Service, opts ...registry.Register
 	lastChecked := c.lastChecked[s.Name]
 	c.Unlock()
 
+	// 已经注册并且是同一对象
 	// if it's already registered and matches then just pass the check
 	if ok && v == h {
 		if options.TTL == time.Duration(0) {
 			// ensure that our service hasn't been deregistered by Consul
+			// 上一次检查到现在的时间间隔 如果在注销间隔之内 则一切正常
 			if time.Since(lastChecked) <= getDeregisterTTL(regInterval) {
 				return nil
 			}
+			// 有可能被注销，进行一次健康检查
 			services, _, err := c.Client().Health().Checks(s.Name, c.queryOptions)
 			if err == nil {
 				for _, v := range services {

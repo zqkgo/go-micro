@@ -26,6 +26,7 @@ type Options struct {
 	Router Router
 
 	// Connection Pool
+	// 连接池大小
 	PoolSize int
 	PoolTTL  time.Duration
 

@@ -15,10 +15,11 @@ import (
 )
 
 // Options对象用来保存某种对象的若干选项
+// 该Options对象属于Service
 type Options struct {
 	Broker broker.Broker
 	// Cmd对象用来处理命令行参数
-	Cmd    cmd.Cmd
+	Cmd cmd.Cmd
 	// 服务的客户端，默认rpc客户端
 	Client client.Client
 	// 服务的服务端，默认rpc服务端
@@ -27,6 +28,7 @@ type Options struct {
 	Transport transport.Transport
 
 	// Before and After funcs
+	// 服务启动前、后，停止前、后的钩子函数
 	BeforeStart []func() error
 	BeforeStop  []func() error
 	AfterStart  []func() error

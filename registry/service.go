@@ -1,5 +1,6 @@
 package registry
 
+// 服务发现对象
 type Service struct {
 	Name      string            `json:"name"`
 	Version   string            `json:"version"`
@@ -8,6 +9,7 @@ type Service struct {
 	Nodes     []*Node           `json:"nodes"`
 }
 
+// 服务节点
 type Node struct {
 	Id       string            `json:"id"`
 	Address  string            `json:"address"`

@@ -6,6 +6,7 @@ type HandlerOption func(*HandlerOptions)
 
 // 实现服务端接口的对象(Handler)持有的选项
 type HandlerOptions struct {
+	// 向服务发现注册时，用来控制是否注册，true-内部使用-否 false-非内部使用-是
 	Internal bool
 	// 存储服务所有的方法的头信息
 	// 服务名.方法名 -> 头信息，例如：Save.Categories => 头信息
