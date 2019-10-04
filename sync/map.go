@@ -6,9 +6,9 @@ import (
 	"encoding/json"
 	"fmt"
 
-	"github.com/micro/go-micro/data/store"
-	ckv "github.com/micro/go-micro/data/store/consul"
-	lock "github.com/micro/go-micro/sync/lock/consul"
+	"github.com/micro/go-micro/store"
+	ckv "github.com/micro/go-micro/store/etcd"
+	lock "github.com/micro/go-micro/sync/lock/etcd"
 )
 
 type syncMap struct {
@@ -85,7 +85,7 @@ func (m *syncMap) Delete(key interface{}) error {
 }
 
 func (m *syncMap) Iterate(fn func(key, val interface{}) error) error {
-	keyvals, err := m.opts.Store.Dump()
+	keyvals, err := m.opts.Store.Sync()
 	if err != nil {
 		return err
 	}

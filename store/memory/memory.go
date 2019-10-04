@@ -6,7 +6,7 @@ import (
 	"time"
 
 	"github.com/micro/go-micro/config/options"
-	"github.com/micro/go-micro/data/store"
+	"github.com/micro/go-micro/store"
 )
 
 type memoryStore struct {
@@ -21,7 +21,7 @@ type memoryRecord struct {
 	c time.Time
 }
 
-func (m *memoryStore) Dump() ([]*store.Record, error) {
+func (m *memoryStore) Sync() ([]*store.Record, error) {
 	m.RLock()
 	defer m.RUnlock()
 
