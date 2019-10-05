@@ -122,6 +122,7 @@ func (g *grpcClient) call(ctx context.Context, node *registry.Node, req client.R
 	}
 	defer func() {
 		// defer execution of release
+		// 释放连接到连接池，如果连接池满或者grpc调用出错，则连接被关闭
 		g.pool.release(address, cc, grr)
 	}()
 
@@ -530,10 +531,12 @@ func newClient(opts ...client.Option) client.Client {
 		PoolTTL:  client.DefaultPoolTTL,
 	}
 
+	// 调用可修改Options的函数参数
 	for _, o := range opts {
 		o(&options)
 	}
 
+	// 检查配置项如果没设置则赋默认值
 	if len(options.ContentType) == 0 {
 		options.ContentType = "application/grpc+proto"
 	}

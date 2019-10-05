@@ -28,7 +28,8 @@ type Options struct {
 	// Connection Pool
 	// 连接池大小
 	PoolSize int
-	PoolTTL  time.Duration
+	// 连接有效期，连接存在时间如果超过这个值，会被连接池关闭
+	PoolTTL time.Duration
 
 	// Middleware for client
 	Wrappers []Wrapper
@@ -53,7 +54,7 @@ type CallOptions struct {
 	// 调用此方法判断是否继续重试
 	Retry RetryFunc
 	// Transport Dial Timeout
-	// 建立tcp连接时的超时时间
+	// 与grpc server建立tcp连接时的超时时间
 	DialTimeout time.Duration
 	// Number of Call attempts
 	// 请求重试次数

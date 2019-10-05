@@ -21,6 +21,7 @@ var (
 
 type codecsKey struct{}
 type tlsAuth struct{}
+// new Client()时如果设置了接收消息大小的最大值则context以此为key
 type maxRecvMsgSizeKey struct{}
 type maxSendMsgSizeKey struct{}
 
