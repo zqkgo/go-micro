@@ -43,6 +43,7 @@ type Options struct {
 // 都是默认值，每一种组件（配置项）都有一个默认值。然后根据调用方指定的配置（参数）更新
 // Options对象，这种工作由Cmd对象通过解析命令行参数和修改指针完成。
 func newOptions(opts ...Option) Options {
+	// 使用默认组件
 	opt := Options{
 		Broker:    broker.DefaultBroker,
 		Cmd:       cmd.DefaultCmd,

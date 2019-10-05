@@ -18,6 +18,7 @@ type Options struct {
 	Version     string
 
 	// We need pointers to things so we can swap them out if needed.
+	// 以指针方式存储可替换原对象
 	Broker    *broker.Broker
 	Registry  *registry.Registry
 	Selector  *selector.Selector
@@ -25,6 +26,7 @@ type Options struct {
 	Client    *client.Client
 	Server    *server.Server
 
+	// 映射关系（组件实现名 -> 组件实现的创建函数）
 	Brokers    map[string]func(...broker.Option) broker.Broker
 	Clients    map[string]func(...client.Option) client.Client
 	Registries map[string]func(...registry.Option) registry.Registry

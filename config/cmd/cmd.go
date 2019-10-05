@@ -242,6 +242,7 @@ func init() {
 
 func newCmd(opts ...Option) Cmd {
 	options := Options{
+		// 各组件测默认实现对象的指针
 		Broker:    &broker.DefaultBroker,
 		Client:    &client.DefaultClient,
 		Registry:  &registry.DefaultRegistry,
@@ -296,6 +297,8 @@ func (c *cmd) Before(ctx *cli.Context) error {
 	var clientOpts []client.Option
 
 	// Set the client
+	// 如果传入参数--client=grpc，则会调用创建GRPC client的函数
+	// 新创建的GRPC client使用默认的registry即mdns
 	if name := ctx.String("client"); len(name) > 0 {
 		// only change if we have the client and type differs
 		if cl, ok := c.opts.Clients[name]; ok && (*c.opts.Client).String() != name {
@@ -326,6 +329,11 @@ func (c *cmd) Before(ctx *cli.Context) error {
 	// Set the registry
 	// 如果命令行参数--registry=consul与默认的registry(mdns)不同
 	// 则从c.opts.Registries的map中找到相应的创建函数并执行之
+	// 这里有个问题，如果外层设置了reigstry，例如：service := micro.NewService(micro.Registry(consul.NewRegistry()))
+	// 或者 service.Init(micro.Registry(consul.NewRegistry())，而在启动是又传入参数--registry=consul
+	// 则会导致"设置两次反而无效，最后使用默认regisry即mdns"的结果。有点奇怪....
+	// 所以，如果命令行设置了registry，代码中要么不设置，要么设置一个不同的registry...
+	// 例如，service.Init(micro.Registry(mdns.NewRegistry()) ... $go run . --registry=consul
 	if name := ctx.String("registry"); len(name) > 0 && (*c.opts.Registry).String() != name {
 		r, ok := c.opts.Registries[name]
 		if !ok {
