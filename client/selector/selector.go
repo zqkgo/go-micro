@@ -29,9 +29,12 @@ type Selector interface {
 type Next func() (*registry.Node, error)
 
 // Filter is used to filter a service during the selection process
+// 获取到服务对象之后通过Filter对之进行过滤
 type Filter func([]*registry.Service) []*registry.Service
 
 // Strategy is a selection strategy e.g random, round robin
+// Strategy是一种函数类型，符合此签名的函数，接收一个已经服务发现的对象
+// 返回的Next也是一种函数类型，Next是真正 执行算法，返回节点 的函数
 type Strategy func([]*registry.Service) Next
 
 var (

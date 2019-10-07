@@ -48,21 +48,26 @@ func (g *grpcClient) secure() grpc.DialOption {
 	return grpc.WithInsecure()
 }
 
+// next返回一个函数
 func (g *grpcClient) next(request client.Request, opts client.CallOptions) (selector.Next, error) {
+	// 服务名称，例如go.micro.srv.gretter
 	service := request.Service()
 
 	// get proxy
+	// 如果设置了代理则服务名称改成代理名称，即代理服务
 	if prx := os.Getenv("MICRO_PROXY"); len(prx) > 0 {
 		service = prx
 	}
 
 	// get proxy address
+	// 如果配置了代理地址，则将服务地址改成代理服务的地址
 	if prx := os.Getenv("MICRO_PROXY_ADDRESS"); len(prx) > 0 {
 		opts.Address = []string{prx}
 	}
 
 	// return remote address
-	// 如果有代理则直接返回 选择代理节点 的 函数
+	// 如果有地址说明不能走服务发现，而要走第一个地址
+	// 所以返回的函数，只返回第一个地址
 	if len(opts.Address) > 0 {
 		return func() (*registry.Node, error) {
 			return &registry.Node{
@@ -87,6 +92,7 @@ func (g *grpcClient) call(ctx context.Context, node *registry.Node, req client.R
 	address := node.Address
 
 	header := make(map[string]string)
+	// 从context中获取头(元)信息
 	if md, ok := metadata.FromContext(ctx); ok {
 		for k, v := range md {
 			header[k] = v
@@ -98,7 +104,9 @@ func (g *grpcClient) call(ctx context.Context, node *registry.Node, req client.R
 	// set the content type for the request
 	header["x-content-type"] = req.ContentType()
 
+	// grpc格式的md
 	md := gmetadata.New(header)
+	// 构造一个以k/v保存头信息的context
 	ctx = gmetadata.NewOutgoingContext(ctx, md)
 
 	cf, err := g.newGRPCCodec(req.ContentType())
@@ -301,10 +309,12 @@ func (g *grpcClient) NewRequest(service, method string, req interface{}, reqOpts
 func (g *grpcClient) Call(ctx context.Context, req client.Request, rsp interface{}, opts ...client.CallOption) error {
 	// make a copy of call opts
 	callOpts := g.opts.CallOptions
+	// 调用可以更改配置项的函数参数
 	for _, opt := range opts {
 		opt(&callOpts)
 	}
 
+	// 获取一个函数，该函数根据一定策略挑选下一个服务节点
 	next, err := g.next(req, callOpts)
 	if err != nil {
 		return err
@@ -541,6 +551,7 @@ func newClient(opts ...client.Option) client.Client {
 		options.ContentType = "application/grpc+proto"
 	}
 
+	// 没有配置组件则使用默认实现
 	if options.Broker == nil {
 		options.Broker = broker.DefaultBroker
 	}
@@ -549,6 +560,8 @@ func newClient(opts ...client.Option) client.Client {
 		options.Registry = registry.DefaultRegistry
 	}
 
+	// 如果参数没指定selector则使用默认实现
+	// 如果命令行指定了selector则此时虽然是默认实现，但会被cmd更新成命令行配置项
 	if options.Selector == nil {
 		options.Selector = selector.NewSelector(
 			selector.Registry(options.Registry),
@@ -564,6 +577,7 @@ func newClient(opts ...client.Option) client.Client {
 	c := client.Client(rc)
 
 	// wrap in reverse
+	// 出栈调用wrapper
 	for i := len(options.Wrappers); i > 0; i-- {
 		c = options.Wrappers[i-1](c)
 	}

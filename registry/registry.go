@@ -22,8 +22,10 @@ type Registry interface {
 	Options() Options
 	Register(*Service, ...RegisterOption) error
 	Deregister(*Service) error
+	// 根据服务名称(go.micro.srv.greeter)获取服务对象
 	GetService(string) ([]*Service, error)
 	ListServices() ([]*Service, error)
+	// 构造监听器watcher
 	Watch(...WatchOption) (Watcher, error)
 	String() string
 }

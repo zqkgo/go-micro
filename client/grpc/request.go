@@ -8,13 +8,20 @@ import (
 	"github.com/micro/go-micro/codec"
 )
 
+// 请求对象包含了如下信息
+// 1. 哪个服务
+// 2. 哪个endpoint
+// 3. 编码方式
+// 4. 配置项
 type grpcRequest struct {
 	// Service名称，例如go.micro.srv.save
 	service     string
 	// service.method例如Save.Categories
 	method      string
+	// 内容类型（格式），例如application/grpc+proto
+	// 用来选择codec编码方式
 	contentType string
-	// 请求对象
+	// 请求对象message，例如*CategoriesReq
 	request     interface{}
 	opts        client.RequestOptions
 	codec       codec.Codec
@@ -48,6 +55,7 @@ func newGRPCRequest(service, method string, request interface{}, contentType str
 	}
 
 	// set the content-type specified
+	// 如果参数配置了，则不使用GRPC客户端的全局contentType
 	if len(opts.ContentType) > 0 {
 		contentType = opts.ContentType
 	}

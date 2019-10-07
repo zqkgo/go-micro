@@ -13,6 +13,7 @@ import (
 
 type Options struct {
 	// Used to select codec
+	// 用来选择编码方式
 	ContentType string
 
 	// Plugged interfaces
@@ -32,6 +33,7 @@ type Options struct {
 	PoolTTL time.Duration
 
 	// Middleware for client
+	// 设置入栈，调用出栈，创建完grpcClient只有调用
 	Wrappers []Wrapper
 
 	// Default Call Options
@@ -43,9 +45,12 @@ type Options struct {
 }
 
 type CallOptions struct {
+	// 可修改*SelectionOptions的函数数组
 	SelectOptions []selector.SelectOption
 
 	// Address of remote hosts
+	// 在grpc调用中只选第一个地址作为代理地址来代替服务发现
+	// 在rpc调用中，每个地址表示一个节点地址
 	Address []string
 	// Backoff func
 	// 兜底函数
@@ -191,6 +196,7 @@ func Selector(s selector.Selector) Option {
 }
 
 // Adds a Wrapper to a list of options passed into the client
+// 入栈
 func Wrap(w Wrapper) Option {
 	return func(o *Options) {
 		o.Wrappers = append(o.Wrappers, w)
@@ -258,6 +264,8 @@ func WithAddress(a ...string) CallOption {
 	}
 }
 
+// 构造client时可以使用此函数设置selector的策略、过滤器等
+// client会在选择节点的时候应用此配置项
 func WithSelectOption(so ...selector.SelectOption) CallOption {
 	return func(o *CallOptions) {
 		o.SelectOptions = append(o.SelectOptions, so...)

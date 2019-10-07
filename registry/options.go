@@ -26,6 +26,7 @@ type RegisterOptions struct {
 type WatchOptions struct {
 	// Specify a service to watch
 	// If blank, the watch is for all services
+	// 服务名称，例如go.micro.srv.greeter
 	Service string
 	// Other options for implementations of the interface
 	// can be stored in a context

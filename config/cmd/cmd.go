@@ -469,6 +469,7 @@ func (c *cmd) Before(ctx *cli.Context) error {
 
 	// We have some command line opts for the server.
 	// Lets set it up
+	// 创建server对象时设置的组件默认实现，此时被更新成配置项
 	if len(serverOpts) > 0 {
 		if err := (*c.opts.Server).Init(serverOpts...); err != nil {
 			log.Fatalf("Error configuring server: %v", err)
@@ -476,6 +477,7 @@ func (c *cmd) Before(ctx *cli.Context) error {
 	}
 
 	// Use an init option?
+	// 创建client对象时设置的组件默认实现，此时被更新成配置项
 	if len(clientOpts) > 0 {
 		if err := (*c.opts.Client).Init(clientOpts...); err != nil {
 			log.Fatalf("Error configuring client: %v", err)

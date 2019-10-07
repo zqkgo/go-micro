@@ -75,6 +75,7 @@ func CopyService(service *Service) *Service {
 }
 
 // Copy makes a copy of services
+// 复制服务对象
 func Copy(current []*Service) []*Service {
 	services := make([]*Service, len(current))
 	for i, service := range current {

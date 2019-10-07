@@ -15,6 +15,7 @@ type registrySelector struct {
 func (c *registrySelector) newCache() cache.Cache {
 	ropts := []cache.Option{}
 	if c.so.Context != nil {
+		// 如果配置了缓存有效期
 		if t, ok := c.so.Context.Value("selector_ttl").(time.Duration); ok {
 			ropts = append(ropts, cache.WithTTL(t))
 		}
@@ -38,10 +39,12 @@ func (c *registrySelector) Options() Options {
 }
 
 func (c *registrySelector) Select(service string, opts ...SelectOption) (Next, error) {
+	// 默认使用selector配置项的Strategy
 	sopts := SelectOptions{
 		Strategy: c.so.Strategy,
 	}
 
+	// 调用可以修改配置项的函数参数
 	for _, opt := range opts {
 		opt(&sopts)
 	}
@@ -49,6 +52,7 @@ func (c *registrySelector) Select(service string, opts ...SelectOption) (Next, e
 	// get the service
 	// try the cache first
 	// if that fails go directly to the registry
+	// 获取服务对象
 	services, err := c.rc.GetService(service)
 	if err != nil {
 		if err == registry.ErrNotFound {
@@ -89,7 +93,7 @@ func (c *registrySelector) String() string {
 
 func NewSelector(opts ...Option) Selector {
 	sopts := Options{
-		Strategy: Random,
+		Strategy: Random, // 默认使用随机算法选择服务节点
 	}
 
 	for _, opt := range opts {

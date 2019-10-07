@@ -8,15 +8,20 @@ import (
 
 type Options struct {
 	Registry registry.Registry
+	// Strategy是一种函数类型，符合此签名的函数，接收一个已经服务发现的对象
+	// 返回的Next也是一种函数类型，Next是真正 执行算法，返回节点 的函数
 	Strategy Strategy
 
 	// Other options for implementations of the interface
 	// can be stored in a context
+	// 其他配置项例如缓存TTL、client、router等保存在context
 	Context context.Context
 }
 
 type SelectOptions struct {
 	Filters  []Filter
+	// Strategy是一种函数类型，符合此签名的函数，接收一个已经服务发现的对象
+	// 返回的Next也是一种函数类型，Next是真正 执行算法，返回节点 的函数
 	Strategy Strategy
 
 	// Other options for implementations of the interface

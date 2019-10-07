@@ -12,6 +12,7 @@ import (
 )
 
 type consulWatcher struct {
+	// 注册中心服务发现的consul实现
 	r        *consulRegistry
 	wo       registry.WatchOptions
 	wp       *watch.Plan

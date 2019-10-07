@@ -8,7 +8,7 @@ import (
 	"time"
 
 	"github.com/micro/go-micro/registry"
-	log "github.com/micro/go-micro/util/log"
+	"github.com/micro/go-micro/util/log"
 )
 
 // Cache is the registry cache interface
@@ -32,8 +32,11 @@ type cache struct {
 
 	// registry cache
 	sync.RWMutex
-	cache   map[string][]*registry.Service
-	ttls    map[string]time.Time
+	// 服务名(e.g. go.micro.srv.greeter)到服务对象数组的映射
+	cache map[string][]*registry.Service
+	// 服务名到有效期的映射
+	ttls map[string]time.Time
+	// 服务是否被watch
 	watched map[string]bool
 
 	// used to stop the cache
@@ -81,6 +84,7 @@ func (c *cache) isValid(services []*registry.Service, ttl time.Time) bool {
 	}
 
 	// time since ttl is longer than timeout
+	// 所以真正的过期时间是 设置时间 + 2*TTL
 	if time.Since(ttl) > c.opts.TTL {
 		return false
 	}
@@ -118,6 +122,7 @@ func (c *cache) get(service string) ([]*registry.Service, error) {
 	ttl := c.ttls[service]
 
 	// got services && within ttl so return cache
+	// 检查服务是否可用并且在有效期内
 	if c.isValid(services, ttl) {
 		// make a copy
 		cp := registry.Copy(services)
@@ -128,9 +133,11 @@ func (c *cache) get(service string) ([]*registry.Service, error) {
 	}
 
 	// get does the actual request for a service and cache it
+	// 从注册中心获取服务对象，缓存下来
 	get := func(service string, cached []*registry.Service) ([]*registry.Service, error) {
 		// ask the registry
 		services, err := c.Registry.GetService(service)
+		// 遇到错误，如果有缓存服务对象则返回缓存对象
 		if err != nil {
 			// check the cache
 			if len(cached) > 0 {
@@ -144,6 +151,7 @@ func (c *cache) get(service string) ([]*registry.Service, error) {
 		}
 
 		// reset the status
+		// 成功获取服务对象
 		if c.getStatus(); err != nil {
 			c.setStatus(nil)
 		}
@@ -157,6 +165,7 @@ func (c *cache) get(service string) ([]*registry.Service, error) {
 	}
 
 	// watch service if not watched
+	// 如果服务没有被watch，则watch之，监听注册中心服务变化
 	if _, ok := c.watched[service]; !ok {
 		go c.run(service)
 	}
@@ -300,11 +309,13 @@ func (c *cache) run(service string) {
 
 	for {
 		// exit early if already dead
+		// 接收到退出信号则马上退出
 		if c.quit() {
 			return
 		}
 
 		// jitter before starting
+		// 随机等待一小小会
 		j := rand.Int63n(100)
 		time.Sleep(time.Duration(j) * time.Millisecond)
 
