@@ -104,7 +104,7 @@ func (c *cache) quit() bool {
 
 func (c *cache) del(service string) {
 	// don't blow away cache in error state
-	if err := c.getStatus(); err != nil {
+	if err := c.status; err != nil {
 		return
 	}
 	// otherwise delete entries
@@ -120,15 +120,14 @@ func (c *cache) get(service string) ([]*registry.Service, error) {
 	services := c.cache[service]
 	// get cache ttl
 	ttl := c.ttls[service]
+	// make a copy
+	cp := registry.Copy(services)
 
 	// got services && within ttl so return cache
 	// 检查服务是否可用并且在有效期内
-	if c.isValid(services, ttl) {
-		// make a copy
-		cp := registry.Copy(services)
-		// unlock the read
+	if c.isValid(cp, ttl) {
 		c.RUnlock()
-		// return servics
+		// return services
 		return cp, nil
 	}
 
@@ -143,8 +142,9 @@ func (c *cache) get(service string) ([]*registry.Service, error) {
 			if len(cached) > 0 {
 				// set the error status
 				c.setStatus(err)
+
 				// return the stale cache
-				return registry.Copy(cached), nil
+				return cached, nil
 			}
 			// otherwise return error
 			return nil, err
@@ -174,7 +174,7 @@ func (c *cache) get(service string) ([]*registry.Service, error) {
 	c.RUnlock()
 
 	// get and return services
-	return get(service, services)
+	return get(service, cp)
 }
 
 func (c *cache) set(service string, services []*registry.Service) {
