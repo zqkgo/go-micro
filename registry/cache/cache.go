@@ -315,11 +315,12 @@ func (c *cache) run(service string) {
 		}
 
 		// jitter before starting
-		// 随机等待一小小会
+		// 随机等待一小小会，百毫秒级
 		j := rand.Int63n(100)
 		time.Sleep(time.Duration(j) * time.Millisecond)
 
 		// create new watcher
+		// 构造watcher对象，运行watch plan
 		w, err := c.Registry.Watch(
 			registry.WatchService(service),
 		)
@@ -329,6 +330,7 @@ func (c *cache) run(service string) {
 				return
 			}
 
+			// 设置等待时间，a越大等待越久，百毫秒级
 			d := backoff(a)
 			c.setStatus(err)
 

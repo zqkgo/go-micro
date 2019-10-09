@@ -106,9 +106,10 @@ func (g *grpcClient) call(ctx context.Context, node *registry.Node, req client.R
 
 	// grpc格式的md
 	md := gmetadata.New(header)
-	// 构造一个以k/v保存头信息的context
+	// 构造一个保存头信息的context
 	ctx = gmetadata.NewOutgoingContext(ctx, md)
 
+	// 根据content-type设置编解码方式
 	cf, err := g.newGRPCCodec(req.ContentType())
 	if err != nil {
 		return errors.InternalServerError("go.micro.client", err.Error())
@@ -321,6 +322,8 @@ func (g *grpcClient) Call(ctx context.Context, req client.Request, rsp interface
 	}
 
 	// check if we already have a deadline
+	// 当前context是否设置过到哪个时间点结束(请求完成或者被cancel)
+	// 如果设置过就使用context的截止时间，否则使用默认配置的超时时间
 	d, ok := ctx.Deadline()
 	if !ok {
 		// no deadline so we create a new one
@@ -328,6 +331,8 @@ func (g *grpcClient) Call(ctx context.Context, req client.Request, rsp interface
 	} else {
 		// got a deadline so no need to setup context
 		// but we need to set the timeout we pass along
+		// 如果设置了截止时间，则将 当前时间到截止时间 之间的时间长度作为请求的超时时间
+		// 意思是，如果到了截止时间还没完成，那么结果就是超时
 		opt := client.WithRequestTimeout(time.Until(d))
 		opt(&callOpts)
 	}
@@ -343,6 +348,7 @@ func (g *grpcClient) Call(ctx context.Context, req client.Request, rsp interface
 	gcall := g.call
 
 	// wrap the call in reverse
+	// 出栈调用CallWrappers
 	for i := len(callOpts.CallWrappers); i > 0; i-- {
 		gcall = callOpts.CallWrappers[i-1](gcall)
 	}
@@ -350,6 +356,7 @@ func (g *grpcClient) Call(ctx context.Context, req client.Request, rsp interface
 	// return errors.New("go.micro.client", "request timeout", 408)
 	call := func(i int) error {
 		// call backoff first. Someone may want an initial start delay
+		// 一开始就判断需要等待多久，第一次不需要等待
 		t, err := callOpts.Backoff(ctx, req, i)
 		if err != nil {
 			return errors.InternalServerError("go.micro.client", err.Error())
@@ -361,6 +368,7 @@ func (g *grpcClient) Call(ctx context.Context, req client.Request, rsp interface
 		}
 
 		// select next node
+		// 算法选择节点
 		node, err := next()
 		service := req.Service()
 		if err != nil {
@@ -371,6 +379,7 @@ func (g *grpcClient) Call(ctx context.Context, req client.Request, rsp interface
 		}
 
 		// make the call
+		// 发起请求
 		err = gcall(ctx, node, req, rsp, callOpts)
 		g.opts.Selector.Mark(service, node, err)
 		return err
@@ -393,11 +402,13 @@ func (g *grpcClient) Call(ctx context.Context, req client.Request, rsp interface
 				return nil
 			}
 
+			// 是否要重试，错误和false都不重试
 			retry, rerr := callOpts.Retry(ctx, req, i, err)
 			if rerr != nil {
 				return rerr
 			}
 
+			// false不重试
 			if !retry {
 				return err
 			}

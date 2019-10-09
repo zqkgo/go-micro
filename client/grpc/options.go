@@ -26,6 +26,7 @@ type maxRecvMsgSizeKey struct{}
 type maxSendMsgSizeKey struct{}
 
 // gRPC Codec to be used to encode/decode requests for a given content type
+// 为某种content type内容类型设置编解码方法
 func Codec(contentType string, c encoding.Codec) client.Option {
 	return func(o *client.Options) {
 		codecs := make(map[string]encoding.Codec)

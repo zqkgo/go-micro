@@ -62,9 +62,10 @@ type CallOptions struct {
 	// 与grpc server建立tcp连接时的超时时间
 	DialTimeout time.Duration
 	// Number of Call attempts
-	// 请求重试次数
+	// 请求重试次数，默认1次
 	Retries int
 	// Request/Response timeout
+	// 超时时间，默认5s
 	RequestTimeout time.Duration
 
 	// Middleware for low level call func

@@ -65,6 +65,8 @@ type cmd struct {
 type Option func(o *Options)
 
 var (
+	// 默认情况下，各组件是相应默认实现的指针
+	// Service.Init()的时候会传入Service.Options中配置的各组件指针对之覆盖
 	DefaultCmd = newCmd()
 
 	DefaultFlags = []cli.Flag{
@@ -491,6 +493,8 @@ func (c *cmd) Before(ctx *cli.Context) error {
 }
 
 func (c *cmd) Init(opts ...Option) error {
+	// Service.Init()时候会传入能修改cmd Options的函数
+	// 这些函数设置了cmd Options的组件(Broker,Transport,Registry,Client,Server)指针
 	for _, o := range opts {
 		o(&c.opts)
 	}
