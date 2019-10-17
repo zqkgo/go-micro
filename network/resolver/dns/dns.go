@@ -1,8 +1,7 @@
-// Package dns resolves names to dns srv records
+// Package dns resolves names to dns records
 package dns
 
 import (
-	"fmt"
 	"net"
 
 	"github.com/micro/go-micro/network/resolver"
@@ -13,19 +12,31 @@ type Resolver struct{}
 
 // Resolve assumes ID is a domain name e.g micro.mu
 func (r *Resolver) Resolve(name string) ([]*resolver.Record, error) {
-	_, addrs, err := net.LookupSRV("network", "udp", name)
+	host, port, err := net.SplitHostPort(name)
+	if err != nil {
+		host = name
+		port = "8085"
+	}
+
+	if len(host) == 0 {
+		host = "localhost"
+	}
+
+	addrs, err := net.LookupHost(host)
 	if err != nil {
 		return nil, err
 	}
+
 	var records []*resolver.Record
+
 	for _, addr := range addrs {
-		address := addr.Target
-		if addr.Port > 0 {
-			address = fmt.Sprintf("%s:%d", addr.Target, addr.Port)
-		}
+		// join resolved record with port
+		address := net.JoinHostPort(addr, port)
+		// append to record set
 		records = append(records, &resolver.Record{
 			Address: address,
 		})
 	}
+
 	return records, nil
 }

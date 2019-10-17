@@ -152,7 +152,7 @@ func (c *cache) get(service string) ([]*registry.Service, error) {
 
 		// reset the status
 		// 成功获取服务对象
-		if c.getStatus(); err != nil {
+		if err := c.getStatus(); err != nil {
 			c.setStatus(nil)
 		}
 
@@ -436,7 +436,7 @@ func (c *cache) Stop() {
 }
 
 func (c *cache) String() string {
-	return "rcache"
+	return "cache"
 }
 
 // New returns a new cache

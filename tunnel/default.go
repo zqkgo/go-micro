@@ -326,7 +326,7 @@ func (t *tun) process() {
 				}
 
 				// check the multicast mappings
-				if msg.multicast {
+				if msg.mode == Multicast {
 					link.RLock()
 					_, ok := link.channels[msg.channel]
 					link.RUnlock()
@@ -366,7 +366,7 @@ func (t *tun) process() {
 				sent = true
 
 				// keep sending broadcast messages
-				if msg.broadcast || msg.multicast {
+				if msg.mode > Unicast {
 					continue
 				}
 
@@ -523,7 +523,7 @@ func (t *tun) listen(link *link) {
 		case "accept":
 			s, exists := t.getSession(channel, sessionId)
 			// we don't need this
-			if exists && s.multicast {
+			if exists && s.mode > Unicast {
 				s.accepted = true
 				continue
 			}
@@ -777,6 +777,30 @@ func (t *tun) setupLink(node string) (*link, error) {
 	return link, nil
 }
 
+func (t *tun) setupLinks() {
+	for _, node := range t.options.Nodes {
+		// skip zero length nodes
+		if len(node) == 0 {
+			continue
+		}
+
+		// link already exists
+		if _, ok := t.links[node]; ok {
+			continue
+		}
+
+		// connect to node and return link
+		link, err := t.setupLink(node)
+		if err != nil {
+			log.Debugf("Tunnel failed to establish node link to %s: %v", node, err)
+			continue
+		}
+
+		// save the link
+		t.links[node] = link
+	}
+}
+
 // connect the tunnel to all the nodes and listen for incoming tunnel connections
 func (t *tun) connect() error {
 	l, err := t.options.Transport.Listen(t.options.Address)
@@ -816,22 +840,8 @@ func (t *tun) connect() error {
 		}
 	}()
 
-	for _, node := range t.options.Nodes {
-		// skip zero length nodes
-		if len(node) == 0 {
-			continue
-		}
-
-		// connect to node and return link
-		link, err := t.setupLink(node)
-		if err != nil {
-			log.Debugf("Tunnel failed to establish node link to %s: %v", node, err)
-			continue
-		}
-
-		// save the link
-		t.links[node] = link
-	}
+	// setup links
+	t.setupLinks()
 
 	// process outbound messages to be sent
 	// process sends to all links
@@ -850,6 +860,8 @@ func (t *tun) Connect() error {
 
 	// already connected
 	if t.connected {
+		// setup links
+		t.setupLinks()
 		return nil
 	}
 
@@ -919,14 +931,12 @@ func (t *tun) Close() error {
 	default:
 		close(t.closed)
 		t.connected = false
-
-		// send a close message
-		// we don't close the link
-		// just the tunnel
-		return t.close()
 	}
 
-	return nil
+	// send a close message
+	// we don't close the link
+	// just the tunnel
+	return t.close()
 }
 
 // Dial an address
@@ -953,7 +963,7 @@ func (t *tun) Dial(channel string, opts ...DialOption) (Session, error) {
 	}
 
 	// set the multicast option
-	c.multicast = options.Multicast
+	c.mode = options.Mode
 	// set the dial timeout
 	c.timeout = options.Timeout
 
@@ -972,34 +982,38 @@ func (t *tun) Dial(channel string, opts ...DialOption) (Session, error) {
 	var links []string
 
 	// non multicast so we need to find the link
-	t.RLock()
-	for _, link := range t.links {
-		// use the link specified it its available
-		if id := options.Link; len(id) > 0 && link.id != id {
-			continue
+	if id := options.Link; id != "" {
+		t.RLock()
+		for _, link := range t.links {
+			// use the link specified it its available
+			if link.id != id {
+				continue
+			}
+
+			link.RLock()
+			_, ok := link.channels[channel]
+			link.RUnlock()
+
+			// we have at least one channel mapping
+			if ok {
+				c.discovered = true
+				links = append(links, link.id)
+			}
+		}
+		t.RUnlock()
+		// link not found
+		if len(links) == 0 {
+			// delete session and return error
+			t.delSession(c.channel, c.session)
+			return nil, ErrLinkNotFound
 		}
 
-		link.RLock()
-		_, ok := link.channels[channel]
-		link.RUnlock()
-
-		// we have at least one channel mapping
-		if ok {
-			c.discovered = true
-			links = append(links, link.id)
-		}
-	}
-	t.RUnlock()
-
-	// link not found
-	if len(links) == 0 && len(options.Link) > 0 {
-		return nil, ErrLinkNotFound
 	}
 
 	// discovered so set the link if not multicast
 	// TODO: pick the link efficiently based
 	// on link status and saturation.
-	if c.discovered && !c.multicast {
+	if c.discovered && c.mode == Unicast {
 		// set the link
 		i := rand.Intn(len(links))
 		c.link = links[i]
@@ -1009,7 +1023,7 @@ func (t *tun) Dial(channel string, opts ...DialOption) (Session, error) {
 	if !c.discovered {
 		// create a new discovery message for this channel
 		msg := c.newMessage("discover")
-		msg.broadcast = true
+		msg.mode = Broadcast
 		msg.outbound = true
 		msg.link = ""
 
@@ -1018,9 +1032,11 @@ func (t *tun) Dial(channel string, opts ...DialOption) (Session, error) {
 
 		select {
 		case <-time.After(after()):
+			t.delSession(c.channel, c.session)
 			return nil, ErrDialTimeout
 		case err := <-c.errChan:
 			if err != nil {
+				t.delSession(c.channel, c.session)
 				return nil, err
 			}
 		}
@@ -1031,7 +1047,7 @@ func (t *tun) Dial(channel string, opts ...DialOption) (Session, error) {
 		dialTimeout := after()
 
 		// set a shorter delay for multicast
-		if c.multicast {
+		if c.mode != Unicast {
 			// shorten this
 			dialTimeout = time.Millisecond * 500
 		}
@@ -1047,7 +1063,7 @@ func (t *tun) Dial(channel string, opts ...DialOption) (Session, error) {
 		}
 
 		// if its multicast just go ahead because this is best effort
-		if c.multicast {
+		if c.mode != Unicast {
 			c.discovered = true
 			c.accepted = true
 			return c, nil
@@ -1055,6 +1071,7 @@ func (t *tun) Dial(channel string, opts ...DialOption) (Session, error) {
 
 		// otherwise return an error
 		if err != nil {
+			t.delSession(c.channel, c.session)
 			return nil, err
 		}
 
@@ -1076,8 +1093,13 @@ func (t *tun) Dial(channel string, opts ...DialOption) (Session, error) {
 }
 
 // Accept a connection on the address
-func (t *tun) Listen(channel string) (Listener, error) {
+func (t *tun) Listen(channel string, opts ...ListenOption) (Listener, error) {
 	log.Debugf("Tunnel listening on %s", channel)
+
+	var options ListenOptions
+	for _, o := range opts {
+		o(&options)
+	}
 
 	// create a new session by hashing the address
 	c, ok := t.newSession(channel, "listener")
@@ -1093,6 +1115,8 @@ func (t *tun) Listen(channel string) (Listener, error) {
 	c.remote = "remote"
 	// set local
 	c.local = channel
+	// set mode
+	c.mode = options.Mode
 
 	tl := &tunListener{
 		channel: channel,

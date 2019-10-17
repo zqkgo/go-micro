@@ -82,8 +82,8 @@ func (t *tunListener) process() {
 					loopback: m.loopback,
 					// the link the message was received on
 					link: m.link,
-					// set multicast
-					multicast: m.multicast,
+					// set the connection mode
+					mode: m.mode,
 					// close chan
 					closed: make(chan bool),
 					// recv called by the acceptor
@@ -181,5 +181,4 @@ func (t *tunListener) Accept() (Session, error) {
 		}
 		return c, nil
 	}
-	return nil, nil
 }

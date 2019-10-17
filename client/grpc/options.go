@@ -6,6 +6,7 @@ import (
 	"crypto/tls"
 
 	"github.com/micro/go-micro/client"
+	"google.golang.org/grpc"
 	"google.golang.org/grpc/encoding"
 )
 
@@ -24,6 +25,8 @@ type tlsAuth struct{}
 // new Client()时如果设置了接收消息大小的最大值则context以此为key
 type maxRecvMsgSizeKey struct{}
 type maxSendMsgSizeKey struct{}
+type grpcDialOptions struct{}
+type grpcCallOptions struct{}
 
 // gRPC Codec to be used to encode/decode requests for a given content type
 // 为某种content type内容类型设置编解码方法
@@ -72,5 +75,29 @@ func MaxSendMsgSize(s int) client.Option {
 			o.Context = context.Background()
 		}
 		o.Context = context.WithValue(o.Context, maxSendMsgSizeKey{}, s)
+	}
+}
+
+//
+// DialOptions to be used to configure gRPC dial options
+//
+func DialOptions(opts ...grpc.DialOption) client.CallOption {
+	return func(o *client.CallOptions) {
+		if o.Context == nil {
+			o.Context = context.Background()
+		}
+		o.Context = context.WithValue(o.Context, grpcDialOptions{}, opts)
+	}
+}
+
+//
+// CallOptions to be used to configure gRPC call options
+//
+func CallOptions(opts ...grpc.CallOption) client.CallOption {
+	return func(o *client.CallOptions) {
+		if o.Context == nil {
+			o.Context = context.Background()
+		}
+		o.Context = context.WithValue(o.Context, grpcCallOptions{}, opts)
 	}
 }
