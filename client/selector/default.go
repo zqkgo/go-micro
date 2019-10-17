@@ -9,6 +9,7 @@ import (
 
 type registrySelector struct {
 	so Options
+	// selector和registry之间的缓存层
 	rc cache.Cache
 }
 

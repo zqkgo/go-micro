@@ -109,7 +109,7 @@ func (g *grpcClient) call(ctx context.Context, node *registry.Node, req client.R
 	// 构造一个保存头信息的context
 	ctx = gmetadata.NewOutgoingContext(ctx, md)
 
-	// 根据content-type设置编解码方式
+	// 根据content-type设置 编解码 方式
 	cf, err := g.newGRPCCodec(req.ContentType())
 	if err != nil {
 		return errors.InternalServerError("go.micro.client", err.Error())
@@ -138,6 +138,7 @@ func (g *grpcClient) call(ctx context.Context, node *registry.Node, req client.R
 	ch := make(chan error, 1)
 
 	go func() {
+		// 构造GRPC方法路由，发起GRPC请求
 		err := cc.Invoke(ctx, methodToGRPC(req.Service(), req.Endpoint()), req.Body(), rsp, grpc.CallContentSubtype(cf.Name()))
 		ch <- microError(err)
 	}()

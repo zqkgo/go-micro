@@ -28,6 +28,7 @@ type grpcRequest struct {
 }
 
 // service Struct.Method /service.Struct/Method
+// 构造GRPC方法，/服务器名.服务名/方法名
 func methodToGRPC(service, method string) string {
 	// no method or already grpc method
 	if len(method) == 0 || method[0] == '/' {
@@ -45,6 +46,7 @@ func methodToGRPC(service, method string) string {
 	}
 
 	// return /pkg.Foo/Bar
+	// 例如，/go.micro.srv.greeter.Say/Hello
 	return fmt.Sprintf("/%s.%s/%s", service, mParts[0], mParts[1])
 }
 

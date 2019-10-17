@@ -6,6 +6,7 @@ import (
 	"time"
 )
 
+// 每次失败，则调用符合此签名的函数，决定下次要等多久后重试
 type BackoffFunc func(ctx context.Context, req Request, attempts int) (time.Duration, error)
 
 // exponential backoff

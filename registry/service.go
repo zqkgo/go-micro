@@ -1,6 +1,9 @@
 package registry
 
 // 服务发现对象
+// 对于consul registry，获取的每个节点都是一个Service
+// 对应的Nodes只有一个节点信息。例如一个service有10个节点就会获取
+// 10个Service对象
 type Service struct {
 	Name      string            `json:"name"`
 	Version   string            `json:"version"`

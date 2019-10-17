@@ -54,7 +54,7 @@ type grpcServer struct {
 
 	sync.RWMutex
 	opts server.Options
-	// 服务名 -> 服务handler，即一个server可以同时提供多个服务
+	// 服务名 -> 服务handler，即一个server可以同时提供多个服务。
 	// 注册服务时，根据该成员找到所有handler的endpoints集合
 	handlers    map[string]server.Handler
 	subscribers map[*subscriber][]broker.Subscriber
@@ -118,6 +118,8 @@ func (g *grpcServer) configure(opts ...server.Option) {
 	gopts := []grpc.ServerOption{
 		grpc.MaxRecvMsgSize(maxMsgSize),
 		grpc.MaxSendMsgSize(maxMsgSize),
+		// 如果grpc server接收到请求后，发现服务或方法未注册，会调用此配置
+		//
 		grpc.UnknownServiceHandler(g.handler),
 	}
 	// TLS配置
@@ -295,6 +297,7 @@ func (g *grpcServer) handler(srv interface{}, stream grpc.ServerStream) error {
 
 	// process unary
 	if !mtype.stream {
+		fmt.Println("methodName: ", mtype.method.Name)
 		return g.processRequest(stream, service, mtype, ct, ctx)
 	}
 
@@ -625,7 +628,8 @@ func (g *grpcServer) Register() error {
 
 	// create registry options
 	rOpts := []registry.RegisterOption{registry.RegisterTTL(config.RegisterTTL)}
-
+	
+	// 调用注册接口进行注册
 	if err := config.Registry.Register(service, rOpts...); err != nil {
 		return err
 	}
@@ -740,7 +744,7 @@ func (g *grpcServer) Start() error {
 	config := g.Options()
 
 	// micro: config.Transport.Listen(config.Address)
-	// 如果配置端口会随机分配端口
+	// 如果未配置端口会随机分配端口
 	ts, err := net.Listen("tcp", config.Address)
 	if err != nil {
 		return err

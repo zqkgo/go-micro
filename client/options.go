@@ -53,7 +53,7 @@ type CallOptions struct {
 	// 在rpc调用中，每个地址表示一个节点地址
 	Address []string
 	// Backoff func
-	// 兜底函数
+	// 兜底函数，获取重试等待时间
 	Backoff BackoffFunc
 	// Check if retriable func
 	// 调用此方法判断是否继续重试
