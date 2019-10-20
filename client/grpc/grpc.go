@@ -100,6 +100,7 @@ func (g *grpcClient) call(ctx context.Context, node *registry.Node, req client.R
 	}
 
 	// set timeout in nanoseconds
+	// 服务端处理的超时时间
 	header["timeout"] = fmt.Sprintf("%d", opts.RequestTimeout)
 	// set the content type for the request
 	header["x-content-type"] = req.ContentType()

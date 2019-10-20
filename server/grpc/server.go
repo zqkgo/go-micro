@@ -24,6 +24,7 @@ var (
 	typeOfError = reflect.TypeOf((*error)(nil)).Elem()
 )
 
+// 表示一个方法
 type methodType struct {
 	method      reflect.Method
 	ArgType     reflect.Type
@@ -34,9 +35,12 @@ type methodType struct {
 
 // 服务信息
 type service struct {
-	name   string                 // name of service
-	rcvr   reflect.Value          // receiver of methods for the service
-	typ    reflect.Type           // type of the receiver
+	name string // name of service
+	// 方法集的receiver值
+	rcvr reflect.Value // receiver of methods for the service
+	// 方法集的receiver类型
+	typ reflect.Type // type of the receiver
+	// 方法名到methodType的映射
 	method map[string]*methodType // registered methods | key是方法名
 }
 
@@ -74,7 +78,6 @@ func prepareEndpoint(method reflect.Method) *methodType {
 	if method.PkgPath != "" {
 		return nil
 	}
-
 	switch mtype.NumIn() {
 	case 3:
 		// assuming streaming

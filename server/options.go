@@ -12,10 +12,12 @@ import (
 )
 
 type Options struct {
+	// content-type到编解码方式的映射
 	Codecs    map[string]codec.NewCodec
 	Broker    broker.Broker
 	Registry  registry.Registry
 	Transport transport.Transport
+	// 元信息，例如x-content-type, timeout等
 	Metadata  map[string]string
 	// 服务端名称，用来进行服务发现，例如go.micro.srv.save
 	Name         string
@@ -23,6 +25,7 @@ type Options struct {
 	Advertise    string
 	Id           string
 	Version      string
+	// 执行某个endpoint方法之前需要执行的若干封装函数
 	HdlrWrappers []HandlerWrapper
 	SubWrappers  []SubscriberWrapper
 

@@ -119,7 +119,7 @@ func (g *grpcServer) configure(opts ...server.Option) {
 		grpc.MaxRecvMsgSize(maxMsgSize),
 		grpc.MaxSendMsgSize(maxMsgSize),
 		// 如果grpc server接收到请求后，发现服务或方法未注册，会调用此配置
-		//
+		// 截止注释时间，所有的服务都会被该配置处理
 		grpc.UnknownServiceHandler(g.handler),
 	}
 	// TLS配置
@@ -184,11 +184,13 @@ func (g *grpcServer) handler(srv interface{}, stream grpc.ServerStream) error {
 		defer g.wg.Done()
 	}
 
+	// 获取完整的方法路径，例如：/go.micro.srv.funcsave.Save/Categories
 	fullMethod, ok := grpc.MethodFromServerStream(stream)
 	if !ok {
 		return grpc.Errorf(codes.Internal, "method does not exist in context")
 	}
 
+	// 提取出服务名和方法名
 	serviceName, methodName, err := mgrpc.ServiceMethod(fullMethod)
 	if err != nil {
 		return status.New(codes.InvalidArgument, err.Error()).Err()
@@ -201,6 +203,7 @@ func (g *grpcServer) handler(srv interface{}, stream grpc.ServerStream) error {
 	}
 
 	// copy the metadata to go-micro.metadata
+	// 复制一份元信息以便对之进行修改
 	md := meta.Metadata{}
 	for k, v := range gmd {
 		md[k] = strings.Join(v, ", ")
@@ -219,15 +222,19 @@ func (g *grpcServer) handler(srv interface{}, stream grpc.ServerStream) error {
 	delete(md, "timeout")
 
 	// create new context
+	// 以stream.Context()为parent构造一个包含头信息的context
 	ctx := meta.NewContext(stream.Context(), md)
 
 	// get peer from context
+	// 如果stream.Context()包含发送请求的peer信息，
+	// 以ctx为parent构造包含peer信息的context
 	if p, ok := peer.FromContext(stream.Context()); ok {
 		md["Remote"] = p.Addr.String()
 		ctx = peer.NewContext(ctx, p)
 	}
 
 	// set the timeout if we have it
+	// 如果有超时时间则构造包含超时时间的context
 	if len(to) > 0 {
 		if n, err := strconv.ParseUint(to, 10, 64); err == nil {
 			ctx, _ = context.WithTimeout(ctx, time.Duration(n))
@@ -235,11 +242,14 @@ func (g *grpcServer) handler(srv interface{}, stream grpc.ServerStream) error {
 	}
 
 	// process via router
+	// 如果设置了路由Router则使用Router处理请求
 	if g.opts.Router != nil {
+		// 根据content-type获取编解码方式
 		cc, err := g.newGRPCCodec(ct)
 		if err != nil {
 			return errors.InternalServerError("go.micro.server", err.Error())
 		}
+		// codec使用stream对象读写消息
 		codec := &grpcCodec{
 			method:   fmt.Sprintf("%s.%s", serviceName, methodName),
 			endpoint: fmt.Sprintf("%s.%s", serviceName, methodName),
@@ -282,6 +292,7 @@ func (g *grpcServer) handler(srv interface{}, stream grpc.ServerStream) error {
 	}
 
 	// process the standard request flow
+	// 根据服务名获取服务对象
 	g.rpc.mu.Lock()
 	service := g.rpc.serviceMap[serviceName]
 	g.rpc.mu.Unlock()
@@ -290,18 +301,20 @@ func (g *grpcServer) handler(srv interface{}, stream grpc.ServerStream) error {
 		return status.New(codes.Unimplemented, fmt.Sprintf("unknown service %s", serviceName)).Err()
 	}
 
+	// 根据方法名获取方法对象
 	mtype := service.method[methodName]
 	if mtype == nil {
 		return status.New(codes.Unimplemented, fmt.Sprintf("unknown service %s.%s", serviceName, methodName)).Err()
 	}
 
 	// process unary
+	// 处理unary类型的请求
 	if !mtype.stream {
-		fmt.Println("methodName: ", mtype.method.Name)
 		return g.processRequest(stream, service, mtype, ct, ctx)
 	}
 
 	// process stream
+	// 处理stream类型的请求
 	return g.processStream(stream, service, mtype, ct, ctx)
 }
 
@@ -311,6 +324,7 @@ func (g *grpcServer) processRequest(stream grpc.ServerStream, service *service, 
 
 		// Decode the argument value.
 		argIsValue := false // if true, need to indirect before calling.
+		// 创建指向 入参类型零值 的指针
 		if mtype.ArgType.Kind() == reflect.Ptr {
 			argv = reflect.New(mtype.ArgType.Elem())
 		} else {
@@ -319,6 +333,7 @@ func (g *grpcServer) processRequest(stream grpc.ServerStream, service *service, 
 		}
 
 		// Unmarshal request
+		// 接收message并赋值给argv
 		if err := stream.RecvMsg(argv.Interface()); err != nil {
 			return err
 		}
@@ -328,11 +343,14 @@ func (g *grpcServer) processRequest(stream grpc.ServerStream, service *service, 
 		}
 
 		// reply value
+		// 创建指向 出参类型零值 的指针
 		replyv = reflect.New(mtype.ReplyType.Elem())
 
+		// function的第一个参数是方法的receiver的值
 		function := mtype.method.Func
 		var returnValues []reflect.Value
 
+		// 获取编解码对象并对入参编码
 		cc, err := g.newGRPCCodec(ct)
 		if err != nil {
 			return errors.InternalServerError("go.micro.server", err.Error())
@@ -343,6 +361,7 @@ func (g *grpcServer) processRequest(stream grpc.ServerStream, service *service, 
 		}
 
 		// create a client.Request
+		// 构造请求对象，没用(9d559848c2ea185c6f54206012686adfb36d0fb9)?
 		r := &rpcRequest{
 			service:     g.opts.Name,
 			contentType: ct,
@@ -369,6 +388,7 @@ func (g *grpcServer) processRequest(stream grpc.ServerStream, service *service, 
 		}
 
 		// wrap the handler func
+		// 使用配置的若干封装函数封装起来
 		for i := len(g.opts.HdlrWrappers); i > 0; i-- {
 			fn = g.opts.HdlrWrappers[i-1](fn)
 		}
@@ -377,6 +397,7 @@ func (g *grpcServer) processRequest(stream grpc.ServerStream, service *service, 
 		statusDesc := ""
 
 		// execute the handler
+		// 执行函数，根据错误类型设置错误码和错误描述
 		if appErr := fn(ctx, r, replyv.Interface()); appErr != nil {
 			if err, ok := appErr.(*rpcError); ok {
 				statusCode = err.code
@@ -390,6 +411,7 @@ func (g *grpcServer) processRequest(stream grpc.ServerStream, service *service, 
 			}
 			return status.New(statusCode, statusDesc).Err()
 		}
+		// 发送响应数据到调用方
 		if err := stream.SendMsg(replyv.Interface()); err != nil {
 			return err
 		}
@@ -628,7 +650,7 @@ func (g *grpcServer) Register() error {
 
 	// create registry options
 	rOpts := []registry.RegisterOption{registry.RegisterTTL(config.RegisterTTL)}
-	
+
 	// 调用注册接口进行注册
 	if err := config.Registry.Register(service, rOpts...); err != nil {
 		return err

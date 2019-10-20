@@ -26,6 +26,7 @@ type wrapCodec struct{ encoding.Codec }
 var jsonpbMarshaler = &jsonpb.Marshaler{}
 
 var (
+	// 默认的grpc服务content-type到编解码方式的映射
 	defaultGRPCCodecs = map[string]encoding.Codec{
 		"application/json":         jsonCodec{},
 		"application/proto":        protoCodec{},
@@ -37,6 +38,7 @@ var (
 		"application/grpc+bytes":   bytesCodec{},
 	}
 
+	// 默认的rpc服务content-type到编解码方式的映射
 	defaultRPCCodecs = map[string]codec.NewCodec{
 		"application/json":         jsonrpc.NewCodec,
 		"application/json-rpc":     jsonrpc.NewCodec,
@@ -122,6 +124,8 @@ func (bytesCodec) Name() string {
 	return "bytes"
 }
 
+// 读取请求头、请求体信息、编码后发送消息
+// 使用Router处理请求的时候会用到
 type grpcCodec struct {
 	// headers
 	id       string
@@ -129,7 +133,9 @@ type grpcCodec struct {
 	method   string
 	endpoint string
 
+	// 发送、接收消息
 	s grpc.ServerStream
+	// 编解码
 	c encoding.Codec
 }
 
