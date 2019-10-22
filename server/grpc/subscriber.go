@@ -16,20 +16,26 @@ const (
 	subSig = "func(context.Context, interface{}) error"
 )
 
+// 处理消息的handler
 type handler struct {
+	// 订阅者最终要执行的方法
 	method  reflect.Value
 	reqType reflect.Type
 	ctxType reflect.Type
 }
 
 type subscriber struct {
-	topic      string
-	rcvr       reflect.Value
+	topic string
+	// 订阅者值
+	rcvr reflect.Value
+	// 订阅者类型，可能是一个函数或带方法集的receiver
 	typ        reflect.Type
 	subscriber interface{}
-	handlers   []*handler
-	endpoints  []*registry.Endpoint
-	opts       server.SubscriberOptions
+	// 如果subscriber是一个函数则只有一个handler
+	// 如果subscriber是一个receiver有可能有多个handler
+	handlers  []*handler
+	endpoints []*registry.Endpoint
+	opts      server.SubscriberOptions
 }
 
 func newSubscriber(topic string, sub interface{}, opts ...server.SubscriberOption) server.Subscriber {
@@ -45,11 +51,12 @@ func newSubscriber(topic string, sub interface{}, opts ...server.SubscriberOptio
 	var endpoints []*registry.Endpoint
 	var handlers []*handler
 
-	if typ := reflect.TypeOf(sub); typ.Kind() == reflect.Func {
+	if typ := reflect.TypeOf(sub); typ.Kind() == reflect.Func { // 如果订阅者是函数
 		h := &handler{
 			method: reflect.ValueOf(sub),
 		}
 
+		// 函数的入参有1个还是2个
 		switch typ.NumIn() {
 		case 1:
 			h.reqType = typ.In(0)
@@ -68,7 +75,7 @@ func newSubscriber(topic string, sub interface{}, opts ...server.SubscriberOptio
 				"subscriber": "true",
 			},
 		})
-	} else {
+	} else { // 如果订阅者是带方法集的receiver
 		hdlr := reflect.ValueOf(sub)
 		name := reflect.Indirect(hdlr).Type().Name()
 
@@ -172,16 +179,19 @@ func (g *grpcServer) createSubHandler(sb *subscriber, opts server.Options) broke
 			msg.Header["Content-Type"] = defaultContentType
 			ct = defaultContentType
 		}
+		// 获取编解码对象
 		cf, err := g.newGRPCCodec(ct)
 		if err != nil {
 			return err
 		}
 
+		// 复制一份消息头
 		hdr := make(map[string]string)
 		for k, v := range msg.Header {
 			hdr[k] = v
 		}
 		delete(hdr, "Content-Type")
+		// 将消息头作为元信息保存到context
 		ctx := metadata.NewContext(context.Background(), hdr)
 
 		results := make(chan error, len(sb.handlers))
@@ -192,6 +202,7 @@ func (g *grpcServer) createSubHandler(sb *subscriber, opts server.Options) broke
 			var isVal bool
 			var req reflect.Value
 
+			// 创建一个入参类型的指针
 			if handler.reqType.Kind() == reflect.Ptr {
 				req = reflect.New(handler.reqType.Elem())
 			} else {
@@ -202,6 +213,7 @@ func (g *grpcServer) createSubHandler(sb *subscriber, opts server.Options) broke
 				req = req.Elem()
 			}
 
+			// 将消息体解码到入参
 			if err := cf.Unmarshal(msg.Body, req.Interface()); err != nil {
 				return err
 			}
@@ -217,6 +229,7 @@ func (g *grpcServer) createSubHandler(sb *subscriber, opts server.Options) broke
 
 				vals = append(vals, reflect.ValueOf(msg.Payload()))
 
+				// 调用handler
 				returnValues := handler.method.Call(vals)
 				if err := returnValues[0].Interface(); err != nil {
 					return err.(error)

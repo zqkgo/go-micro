@@ -530,6 +530,7 @@ func (g *grpcServer) NewSubscriber(topic string, sb interface{}, opts ...server.
 	return newSubscriber(topic, sb, opts...)
 }
 
+// 以sb为key保存到map
 func (g *grpcServer) Subscribe(sb server.Subscriber) error {
 	sub, ok := sb.(*subscriber)
 	if !ok {
@@ -667,6 +668,7 @@ func (g *grpcServer) Register() error {
 	g.registered = true
 
 	for sb, _ := range g.subscribers {
+		// 构造一个handler，注册到broker，当消息到达时会调用该handelr。
 		handler := g.createSubHandler(sb, g.opts)
 		var opts []broker.SubscribeOption
 		if queue := sb.Options().Queue; len(queue) > 0 {
@@ -779,6 +781,7 @@ func (g *grpcServer) Start() error {
 	g.Unlock()
 
 	// connect to the broker
+	// 启动broker的http server
 	if err := config.Broker.Connect(); err != nil {
 		return err
 	}

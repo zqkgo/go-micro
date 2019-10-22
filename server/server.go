@@ -24,6 +24,7 @@ type Server interface {
 	// 构造request handler，处理请求的handler
 	NewHandler(interface{}, ...HandlerOption) Handler
 	NewSubscriber(string, interface{}, ...SubscriberOption) Subscriber
+	// grpcServer: 以sb为key保存到map
 	Subscribe(Subscriber) error
 	Start() error
 	Stop() error

@@ -165,7 +165,7 @@ func (c *consulRegistry) Deregister(s *registry.Service) error {
 	return c.Client().Agent().ServiceDeregister(node.Id)
 }
 
-func (c *consulRegistry) 	Register(s *registry.Service, opts ...registry.RegisterOption) error {
+func (c *consulRegistry) Register(s *registry.Service, opts ...registry.RegisterOption) error {
 	if len(s.Nodes) == 0 {
 		return errors.New("Require at least one node")
 	}
