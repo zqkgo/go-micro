@@ -679,6 +679,8 @@ func (g *grpcServer) Register() error {
 			opts = append(opts, broker.DisableAutoAck())
 		}
 
+		// 注册到broker服务的内存映射
+		// 将topic作为服务注册到registry
 		sub, err := config.Broker.Subscribe(sb.Topic(), handler, opts...)
 		if err != nil {
 			return err
@@ -781,7 +783,7 @@ func (g *grpcServer) Start() error {
 	g.Unlock()
 
 	// connect to the broker
-	// 启动broker的http server
+	// 如果是http broker则启动broker的http server
 	if err := config.Broker.Connect(); err != nil {
 		return err
 	}
