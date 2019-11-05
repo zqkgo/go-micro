@@ -321,12 +321,16 @@ func (c *cmd) Before(ctx *cli.Context) error {
 
 	// Set the broker
 	if name := ctx.String("broker"); len(name) > 0 && (*c.opts.Broker).String() != name {
+		// 获取对应的创建函数
 		b, ok := c.opts.Brokers[name]
 		if !ok {
 			return fmt.Errorf("Broker %s not found", name)
 		}
 
+		// 创建broker
 		*c.opts.Broker = b()
+		// 将新的broker对象作为server和client的配置项
+		// 下面会使用这两个配置项分别对server和client进行初始化
 		serverOpts = append(serverOpts, server.Broker(*c.opts.Broker))
 		clientOpts = append(clientOpts, client.Broker(*c.opts.Broker))
 	}

@@ -17,8 +17,11 @@ const (
 )
 
 // 处理消息的handler
+// 可能是一个函数，也可能是receiver的一个方法
 type handler struct {
 	// 订阅者最终要执行的方法
+	// 如果是函数则调用时正常入参
+	// 如果是receiver的方法，则调用时按Method.Func的规则
 	method  reflect.Value
 	reqType reflect.Type
 	ctxType reflect.Type
@@ -26,14 +29,18 @@ type handler struct {
 
 type subscriber struct {
 	topic string
-	// 订阅者值
+	// 订阅者值，如果subscriber是一个receiver，那么基于反射的handler调用需要rcvr作为第一个参数
 	rcvr reflect.Value
 	// 订阅者类型，可能是一个函数或带方法集的receiver
-	typ        reflect.Type
+	typ reflect.Type
+	// 函数或者多个方法的receiver
 	subscriber interface{}
 	// 如果subscriber是一个函数则只有一个handler
 	// 如果subscriber是一个receiver有可能有多个handler
-	handlers  []*handler
+	// 接收到event后会逐个调用每个handler的method
+	handlers []*handler
+	// 根据subscriber函数或receiver的多个方法构造
+	// 与正常的服务方法一起注册到registry
 	endpoints []*registry.Endpoint
 	opts      server.SubscriberOptions
 }
@@ -78,7 +85,7 @@ func newSubscriber(topic string, sub interface{}, opts ...server.SubscriberOptio
 	} else { // 如果订阅者是带方法集的receiver
 		hdlr := reflect.ValueOf(sub)
 		name := reflect.Indirect(hdlr).Type().Name()
-
+		// receiver的每一个方法
 		for m := 0; m < typ.NumMethod(); m++ {
 			method := typ.Method(m)
 			h := &handler{
@@ -171,6 +178,7 @@ func validateSubscriber(sub server.Subscriber) error {
 	return nil
 }
 
+// 构造一个handler，注册到broker，当消息到达时会调用该handelr。
 func (g *grpcServer) createSubHandler(sb *subscriber, opts server.Options) broker.Handler {
 	return func(p broker.Event) error {
 		msg := p.Message()
@@ -220,6 +228,7 @@ func (g *grpcServer) createSubHandler(sb *subscriber, opts server.Options) broke
 
 			fn := func(ctx context.Context, msg server.Message) error {
 				var vals []reflect.Value
+				// subscriber是带方法集的receiver
 				if sb.typ.Kind() != reflect.Func {
 					vals = append(vals, sb.rcvr)
 				}
@@ -229,7 +238,7 @@ func (g *grpcServer) createSubHandler(sb *subscriber, opts server.Options) broke
 
 				vals = append(vals, reflect.ValueOf(msg.Payload()))
 
-				// 调用handler
+				// 最终调用handler
 				returnValues := handler.method.Call(vals)
 				if err := returnValues[0].Interface(); err != nil {
 					return err.(error)
@@ -237,6 +246,7 @@ func (g *grpcServer) createSubHandler(sb *subscriber, opts server.Options) broke
 				return nil
 			}
 
+			// 执行封装函数
 			for i := len(opts.SubWrappers); i > 0; i-- {
 				fn = opts.SubWrappers[i-1](fn)
 			}
@@ -244,6 +254,7 @@ func (g *grpcServer) createSubHandler(sb *subscriber, opts server.Options) broke
 			if g.wg != nil {
 				g.wg.Add(1)
 			}
+			// 异步调用
 			go func() {
 				if g.wg != nil {
 					defer g.wg.Done()

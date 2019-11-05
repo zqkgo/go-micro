@@ -18,6 +18,7 @@ type Node struct {
 	Address  string            `json:"address"`
 	Metadata map[string]string `json:"metadata"`
 }
+
 // Endpoint表示一个方法
 type Endpoint struct {
 	// 服务名.方法名
@@ -26,9 +27,10 @@ type Endpoint struct {
 	Response *Value            `json:"response"`
 	Metadata map[string]string `json:"metadata"`
 }
+
 // Value表示参数（变量）信息
 type Value struct {
-	Name   string   `json:"name"`
-	Type   string   `json:"type"`
+	Name string `json:"name"`
+	Type string `json:"type"`
 	Values []*Value `json:"values"`
 }

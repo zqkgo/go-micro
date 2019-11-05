@@ -219,6 +219,10 @@ func (c *rpcCodec) Write(m *codec.Message, body interface{}) error {
 	return nil
 }
 
+// rpc请求grpc的server，会出现报错
+// 默认使用http transport ?
+
+// {"id":"go.micro.client.transport","code":500,"detail":"malformed HTTP response \"\\x00\\x00\\x06\\x04\\x00\\x00\\x00\\x00\\x00\\x00\\x05\\x00\\x00@\\x00\"","status":"Internal Server Error"}
 func (c *rpcCodec) ReadHeader(m *codec.Message, r codec.MessageType) error {
 	var tm transport.Message
 

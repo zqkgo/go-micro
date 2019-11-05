@@ -629,6 +629,7 @@ func (g *grpcServer) Register() error {
 	for _, n := range handlerList {
 		endpoints = append(endpoints, g.handlers[n].Endpoints()...)
 	}
+	// 每一个最终会被调用的subscriber函数或者receiver方法
 	for _, e := range subscriberList {
 		endpoints = append(endpoints, e.Endpoints()...)
 	}
@@ -784,6 +785,7 @@ func (g *grpcServer) Start() error {
 
 	// connect to the broker
 	// 如果是http broker则启动broker的http server
+	// 如果grpc broker则启动grpc server
 	if err := config.Broker.Connect(); err != nil {
 		return err
 	}

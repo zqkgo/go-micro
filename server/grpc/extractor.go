@@ -27,14 +27,17 @@ func extractValue(v reflect.Type, d int) *registry.Value {
 
 	switch v.Kind() {
 	case reflect.Struct:
+		// 如果是结构体则遍历每个成员
 		for i := 0; i < v.NumField(); i++ {
 			f := v.Field(i)
+			// 递归处理成员
 			val := extractValue(f.Type, d+1)
 			if val == nil {
 				continue
 			}
 
 			// if we can find a json tag use it
+			// 如果有json标签使用json字段名作为该字段名
 			if tags := f.Tag.Get("json"); len(tags) > 0 {
 				parts := strings.Split(tags, ",")
 				if parts[0] == "-" || parts[0] == "omitempty" {
@@ -101,6 +104,7 @@ func extractEndpoint(method reflect.Method) *registry.Endpoint {
 	}
 }
 
+// 从请求入参提取名称、类型、成员等信息，构造用于服务发现的参数格式
 func extractSubValue(typ reflect.Type) *registry.Value {
 	var reqType reflect.Type
 	switch typ.NumIn() {

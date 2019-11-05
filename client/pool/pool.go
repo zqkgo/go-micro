@@ -8,6 +8,7 @@ import (
 )
 
 // Pool is an interface for connection pooling
+// TODO: grpc_pool为啥没实现此连接池？
 type Pool interface {
 	// Close the pool
 	Close() error
@@ -26,6 +27,7 @@ type Conn interface {
 	transport.Client
 }
 
+// rpc的连接池
 func NewPool(opts ...Option) Pool {
 	var options Options
 	for _, o := range opts {

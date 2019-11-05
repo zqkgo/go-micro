@@ -18,11 +18,11 @@ import (
 // 该Options对象属于Service
 type Options struct {
 	Broker broker.Broker
-	// Cmd对象用来处理命令行参数
+	// Cmd对象用来处理命令行参数。
 	Cmd cmd.Cmd
-	// 服务的客户端，默认rpc客户端
+	// 服务的客户端，默认rpc客户端。service使用此client向其他service发起请求。
 	Client client.Client
-	// 服务的服务端，默认rpc服务端
+	// 服务的服务端，默认rpc服务端。service使用此server处理其他service的请求。
 	Server    server.Server
 	Registry  registry.Registry
 	Transport transport.Transport
@@ -36,6 +36,7 @@ type Options struct {
 
 	// Other options for implementations of the interface
 	// can be stored in a context
+	// 保存其他配置项
 	Context context.Context
 }
 
@@ -237,7 +238,6 @@ func WrapSubscriber(w ...server.SubscriberWrapper) Option {
 }
 
 // Before and Afters
-
 func BeforeStart(fn func() error) Option {
 	return func(o *Options) {
 		o.BeforeStart = append(o.BeforeStart, fn)

@@ -18,16 +18,17 @@ type Options struct {
 	Registry  registry.Registry
 	Transport transport.Transport
 	// 元信息，例如x-content-type, timeout等
-	Metadata  map[string]string
+	Metadata map[string]string
 	// 服务端名称，用来进行服务发现，例如go.micro.srv.save
-	Name         string
-	Address      string
-	Advertise    string
-	Id           string
-	Version      string
-	// 执行某个endpoint方法之前需要执行的若干封装函数
+	Name      string
+	Address   string
+	Advertise string
+	Id        string
+	Version   string
+	// 执行某个endpoint方法前需要执行的若干封装函数
 	HdlrWrappers []HandlerWrapper
-	SubWrappers  []SubscriberWrapper
+	// 执行subscriber的handler前需要执行的若干封装函数
+	SubWrappers []SubscriberWrapper
 
 	// RegisterCheck runs a check function before registering the service
 	RegisterCheck func(context.Context) error

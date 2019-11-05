@@ -112,6 +112,7 @@ type Handler interface {
 // a specific subscriber function or object with endpoints.
 type Subscriber interface {
 	Topic() string
+	// 函数或者多个方法的receiver
 	Subscriber() interface{}
 	Endpoints() []*registry.Endpoint
 	Options() SubscriberOptions
