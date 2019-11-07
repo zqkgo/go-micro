@@ -7,7 +7,8 @@ import (
 type grpcEvent struct {
 	topic       string
 	contentType string
-	payload     interface{}
+	// 自定义消息对象
+	payload interface{}
 }
 
 func newGRPCEvent(topic string, payload interface{}, contentType string, opts ...client.MessageOption) client.Message {

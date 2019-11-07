@@ -266,6 +266,7 @@ func (g *grpcServer) createSubHandler(sb *subscriber, opts server.Options) broke
 				})
 			}()
 		}
+		// 收集subscribers的每个handler的执行错误结果
 		var errors []string
 		for i := 0; i < len(sb.handlers); i++ {
 			if err := <-results; err != nil {

@@ -18,9 +18,11 @@ type Broker interface {
 // message and optional Ack method to acknowledge receipt of the message.
 type Handler func(Event) error
 
+// publisher和subscriber之间交互的数据结构
 type Message struct {
 	Header map[string]string
-	Body   []byte
+	// 编码后的自定义消息对象
+	Body []byte
 }
 
 // Event is given to a subscription handler for processing

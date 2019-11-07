@@ -27,7 +27,8 @@ func HostPort(addr string, port interface{}) string {
 // Listen takes addr:portmin-portmax and binds to the first available port
 // Example: Listen("localhost:5000-6000", fn)
 func Listen(addr string, fn func(string) (net.Listener, error)) (net.Listener, error) {
-
+	
+	// 正常的host:port格式，单端口
 	if strings.Count(addr, ":") == 1 && strings.Count(addr, "-") == 0 {
 		return fn(addr)
 	}
@@ -39,6 +40,7 @@ func Listen(addr string, fn func(string) (net.Listener, error)) (net.Listener, e
 	}
 
 	// try to extract port range
+	// 端口范围
 	prange := strings.Split(ports, "-")
 
 	// single port
@@ -63,6 +65,7 @@ func Listen(addr string, fn func(string) (net.Listener, error)) (net.Listener, e
 	// range the ports
 	for port := min; port <= max; port++ {
 		// try bind to host:port
+		// 这里需要知道所有的host和port的组合形式
 		ln, err := fn(HostPort(host, port))
 		if err == nil {
 			return ln, nil

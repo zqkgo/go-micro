@@ -279,6 +279,7 @@ func (g *grpcClient) maxSendMsgSizeValue() int {
 }
 
 func (g *grpcClient) newGRPCCodec(contentType string) (encoding.Codec, error) {
+	// 先检查是否设置过contentType采用哪种Codec
 	codecs := make(map[string]encoding.Codec)
 	if g.opts.Context != nil {
 		if v := g.opts.Context.Value(codecsKey{}); v != nil {
@@ -535,22 +536,27 @@ func (g *grpcClient) Stream(ctx context.Context, req client.Request, opts ...cli
 }
 
 func (g *grpcClient) Publish(ctx context.Context, p client.Message, opts ...client.PublishOption) error {
+	// 从context中获取元信息
 	md, ok := metadata.FromContext(ctx)
 	if !ok {
 		md = make(map[string]string)
 	}
 	md["Content-Type"] = p.ContentType()
-
+	
+	// 获取编解码对象
 	cf, err := g.newGRPCCodec(p.ContentType())
 	if err != nil {
 		return errors.InternalServerError("go.micro.client", err.Error())
 	}
-
+	
+	// 编码自定义消息数据对象
 	b, err := cf.Marshal(p.Payload())
 	if err != nil {
 		return errors.InternalServerError("go.micro.client", err.Error())
 	}
-
+	
+	// 连接到broker，只有第一次调用的时候执行
+	// TODO：这个时候还会启动broker server， why？
 	g.once.Do(func() {
 		g.opts.Broker.Connect()
 	})

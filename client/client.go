@@ -14,6 +14,7 @@ import (
 type Client interface {
 	Init(...Option) error
 	Options() Options
+	// 构造用来异步发布的消息
 	NewMessage(topic string, msg interface{}, opts ...MessageOption) Message
 	NewRequest(service, endpoint string, req interface{}, reqOpts ...RequestOption) Request
 	Call(ctx context.Context, req Request, rsp interface{}, opts ...CallOption) error
