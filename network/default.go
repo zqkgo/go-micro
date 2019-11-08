@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"hash/fnv"
+	"math"
 	"sync"
 	"time"
 
@@ -37,6 +38,8 @@ var (
 var (
 	// ErrClientNotFound is returned when client for tunnel channel could not be found
 	ErrClientNotFound = errors.New("client not found")
+	// ErrPeerLinkNotFound is returned when peer link could not be found in tunnel Links
+	ErrPeerLinkNotFound = errors.New("peer link not found")
 )
 
 // network implements Network interface
@@ -58,6 +61,8 @@ type network struct {
 
 	// tunClient is a map of tunnel clients keyed over tunnel channel names
 	tunClient map[string]transport.Client
+	// peerLinks is a map of links for each peer
+	peerLinks map[string]tunnel.Link
 
 	sync.RWMutex
 	// connected marks the network as connected
@@ -73,21 +78,6 @@ func newNetwork(opts ...Option) Network {
 	for _, o := range opts {
 		o(&options)
 	}
-
-	// init tunnel address to the network bind address
-	options.Tunnel.Init(
-		tunnel.Address(options.Address),
-	)
-
-	// init router Id to the network id
-	options.Router.Init(
-		router.Id(options.Id),
-	)
-
-	// create tunnel client with tunnel transport
-	tunTransport := tun.NewTransport(
-		tun.WithTunnel(options.Tunnel),
-	)
 
 	// set the address to a hashed address
 	hasher := fnv.New64()
@@ -105,6 +95,22 @@ func newNetwork(opts ...Option) Network {
 		advertise = options.Address
 		peerAddress = address
 	}
+
+	// init tunnel address to the network bind address
+	options.Tunnel.Init(
+		tunnel.Address(options.Address),
+	)
+
+	// init router Id to the network id
+	options.Router.Init(
+		router.Id(options.Id),
+		router.Address(peerAddress),
+	)
+
+	// create tunnel client with tunnel transport
+	tunTransport := tun.NewTransport(
+		tun.WithTunnel(options.Tunnel),
+	)
 
 	// server is network server
 	server := server.NewServer(
@@ -138,6 +144,7 @@ func newNetwork(opts ...Option) Network {
 		server:    server,
 		client:    client,
 		tunClient: make(map[string]transport.Client),
+		peerLinks: make(map[string]tunnel.Link),
 	}
 
 	network.node.network = network
@@ -246,19 +253,22 @@ func (n *network) resolve() {
 }
 
 // handleNetConn handles network announcement messages
-func (n *network) handleNetConn(sess tunnel.Session, msg chan *transport.Message) {
+func (n *network) handleNetConn(s tunnel.Session, msg chan *message) {
 	for {
 		m := new(transport.Message)
-		if err := sess.Recv(m); err != nil {
+		if err := s.Recv(m); err != nil {
 			log.Debugf("Network tunnel [%s] receive error: %v", NetworkChannel, err)
-			if sessErr := sess.Close(); sessErr != nil {
-				log.Debugf("Network tunnel [%s] closing connection error: %v", sessErr)
+			if sessionErr := s.Close(); sessionErr != nil {
+				log.Debugf("Network tunnel [%s] closing connection error: %v", NetworkChannel, sessionErr)
 			}
 			return
 		}
 
 		select {
-		case msg <- m:
+		case msg <- &message{
+			msg:     m,
+			session: s,
+		}:
 		case <-n.closed:
 			return
 		}
@@ -266,7 +276,7 @@ func (n *network) handleNetConn(sess tunnel.Session, msg chan *transport.Message
 }
 
 // acceptNetConn accepts connections from NetworkChannel
-func (n *network) acceptNetConn(l tunnel.Listener, recv chan *transport.Message) {
+func (n *network) acceptNetConn(l tunnel.Listener, recv chan *message) {
 	var i int
 	for {
 		// accept a connection
@@ -295,10 +305,41 @@ func (n *network) acceptNetConn(l tunnel.Listener, recv chan *transport.Message)
 	}
 }
 
+// updatePeerLinks updates link for a given peer
+func (n *network) updatePeerLinks(peerAddr string, linkId string) error {
+	n.Lock()
+	defer n.Unlock()
+	log.Tracef("Network looking up link %s in the peer links", linkId)
+	// lookup the peer link
+	var peerLink tunnel.Link
+	for _, link := range n.tunnel.Links() {
+		if link.Id() == linkId {
+			peerLink = link
+			break
+		}
+	}
+	if peerLink == nil {
+		return ErrPeerLinkNotFound
+	}
+	// if the peerLink is found in the returned links update peerLinks
+	log.Tracef("Network updating peer links for peer %s", peerAddr)
+	// add peerLink to the peerLinks map
+	if link, ok := n.peerLinks[peerAddr]; ok {
+		// if the existing has better Length then the new, replace it
+		if link.Length() < peerLink.Length() {
+			n.peerLinks[peerAddr] = peerLink
+		}
+	} else {
+		n.peerLinks[peerAddr] = peerLink
+	}
+
+	return nil
+}
+
 // processNetChan processes messages received on NetworkChannel
 func (n *network) processNetChan(listener tunnel.Listener) {
 	// receive network message queue
-	recv := make(chan *transport.Message, 128)
+	recv := make(chan *message, 128)
 
 	// accept NetworkChannel connections
 	go n.acceptNetConn(listener, recv)
@@ -307,12 +348,12 @@ func (n *network) processNetChan(listener tunnel.Listener) {
 		select {
 		case m := <-recv:
 			// switch on type of message and take action
-			switch m.Header["Micro-Method"] {
+			switch m.msg.Header["Micro-Method"] {
 			case "connect":
 				// mark the time the message has been received
 				now := time.Now()
 				pbNetConnect := &pbNet.Connect{}
-				if err := proto.Unmarshal(m.Body, pbNetConnect); err != nil {
+				if err := proto.Unmarshal(m.msg.Body, pbNetConnect); err != nil {
 					log.Debugf("Network tunnel [%s] connect unmarshal error: %v", NetworkChannel, err)
 					continue
 				}
@@ -327,6 +368,12 @@ func (n *network) processNetChan(listener tunnel.Listener) {
 					peers:    make(map[string]*node),
 					lastSeen: now,
 				}
+				// update peer links
+				log.Tracef("Network updating peer link %s for peer: %s", m.session.Link(), pbNetConnect.Node.Address)
+				if err := n.updatePeerLinks(pbNetConnect.Node.Address, m.session.Link()); err != nil {
+					log.Debugf("Network failed updating peer links: %s", err)
+				}
+				// add peer to the list of node peers
 				if err := n.node.AddPeer(peer); err == ErrPeerExists {
 					log.Debugf("Network peer exists, refreshing: %s", peer.id)
 					// update lastSeen time for the existing node
@@ -349,7 +396,7 @@ func (n *network) processNetChan(listener tunnel.Listener) {
 				// mark the time the message has been received
 				now := time.Now()
 				pbNetPeer := &pbNet.Peer{}
-				if err := proto.Unmarshal(m.Body, pbNetPeer); err != nil {
+				if err := proto.Unmarshal(m.msg.Body, pbNetPeer); err != nil {
 					log.Debugf("Network tunnel [%s] peer unmarshal error: %v", NetworkChannel, err)
 					continue
 				}
@@ -363,6 +410,11 @@ func (n *network) processNetChan(listener tunnel.Listener) {
 					address:  pbNetPeer.Node.Address,
 					peers:    make(map[string]*node),
 					lastSeen: now,
+				}
+				// update peer links
+				log.Tracef("Network updating peer link %s for peer: %s", m.session.Link(), pbNetPeer.Node.Address)
+				if err := n.updatePeerLinks(pbNetPeer.Node.Address, m.session.Link()); err != nil {
+					log.Debugf("Network failed updating peer links: %s", err)
 				}
 				if err := n.node.AddPeer(peer); err == nil {
 					// send a solicit message when discovering new peer
@@ -387,13 +439,13 @@ func (n *network) processNetChan(listener tunnel.Listener) {
 
 				// NOTE: we don't unpack MaxDepth toplogy
 				peer = UnpackPeerTopology(pbNetPeer, now, MaxDepth-1)
-				log.Debugf("Network updating topology of node: %s", n.node.id)
+				log.Tracef("Network updating topology of node: %s", n.node.id)
 				if err := n.node.UpdatePeer(peer); err != nil {
 					log.Debugf("Network failed to update peers: %v", err)
 				}
 			case "close":
 				pbNetClose := &pbNet.Close{}
-				if err := proto.Unmarshal(m.Body, pbNetClose); err != nil {
+				if err := proto.Unmarshal(m.msg.Body, pbNetClose); err != nil {
 					log.Debugf("Network tunnel [%s] close unmarshal error: %v", NetworkChannel, err)
 					continue
 				}
@@ -412,6 +464,10 @@ func (n *network) processNetChan(listener tunnel.Listener) {
 				if err := n.prunePeerRoutes(peer); err != nil {
 					log.Debugf("Network failed pruning peer %s routes: %v", peer.id, err)
 				}
+				// deelete peer from the peerLinks
+				n.Lock()
+				delete(n.peerLinks, pbNetClose.Node.Address)
+				n.Unlock()
 			}
 		case <-n.closed:
 			return
@@ -521,6 +577,9 @@ func (n *network) prune() {
 			pruned := n.PruneStalePeerNodes(PruneTime)
 			for id, peer := range pruned {
 				log.Debugf("Network peer exceeded prune time: %s", id)
+				n.Lock()
+				delete(n.peerLinks, peer.address)
+				n.Unlock()
 				if err := n.prunePeerRoutes(peer); err != nil {
 					log.Debugf("Network failed pruning peer %s routes: %v", id, err)
 				}
@@ -528,7 +587,7 @@ func (n *network) prune() {
 			// get a list of all routes
 			routes, err := n.options.Router.Table().List()
 			if err != nil {
-				log.Debugf("Network failed listing routes: %v", err)
+				log.Debugf("Network failed listing routes when pruning peers: %v", err)
 				continue
 			}
 			// collect all the router IDs in the routing table
@@ -549,16 +608,22 @@ func (n *network) prune() {
 }
 
 // handleCtrlConn handles ControlChannel connections
-func (n *network) handleCtrlConn(sess tunnel.Session, msg chan *transport.Message) {
+func (n *network) handleCtrlConn(s tunnel.Session, msg chan *message) {
 	for {
 		m := new(transport.Message)
-		if err := sess.Recv(m); err != nil {
-			log.Debugf("Network tunnel advert receive error: %v", err)
+		if err := s.Recv(m); err != nil {
+			log.Debugf("Network tunnel [%s] receive error: %v", ControlChannel, err)
+			if sessionErr := s.Close(); sessionErr != nil {
+				log.Debugf("Network tunnel [%s] closing connection error: %v", ControlChannel, sessionErr)
+			}
 			return
 		}
 
 		select {
-		case msg <- m:
+		case msg <- &message{
+			msg:     m,
+			session: s,
+		}:
 		case <-n.closed:
 			return
 		}
@@ -566,7 +631,7 @@ func (n *network) handleCtrlConn(sess tunnel.Session, msg chan *transport.Messag
 }
 
 // acceptCtrlConn accepts connections from ControlChannel
-func (n *network) acceptCtrlConn(l tunnel.Listener, recv chan *transport.Message) {
+func (n *network) acceptCtrlConn(l tunnel.Listener, recv chan *message) {
 	var i int
 	for {
 		// accept a connection
@@ -596,42 +661,81 @@ func (n *network) acceptCtrlConn(l tunnel.Listener, recv chan *transport.Message
 	}
 }
 
-// setRouteMetric calculates metric of the route and updates it in place
-// - Local route metric is 1
-// - Routes with ID of adjacent nodes are 10
-// - Routes by peers of the advertiser are 100
-// - Routes beyond your neighbourhood are 1000
-func (n *network) setRouteMetric(route *router.Route) {
+// getHopCount queries network graph and returns hop count for given router
+// - Routes for local services have hop count 1
+// - Routes with ID of adjacent nodes have hop count 2
+// - Routes by peers of the advertiser have hop count 3
+// - Routes beyond node neighbourhood have hop count 4
+func (n *network) getHopCount(rtr string) int {
+	// make sure node.peers are not modified
+	n.node.RLock()
+	defer n.node.RUnlock()
+
 	// we are the origin of the route
-	if route.Router == n.options.Id {
-		route.Metric = 1
-		return
+	if rtr == n.options.Id {
+		return 1
 	}
 
-	// check if the route origin is our peer
-	if _, ok := n.peers[route.Router]; ok {
-		route.Metric = 10
-		return
+	// the route origin is our peer
+	if _, ok := n.peers[rtr]; ok {
+		return 10
 	}
 
-	// check if the route origin is the peer of our peer
+	// the route origin is the peer of our peer
 	for _, peer := range n.peers {
 		for id := range peer.peers {
-			if route.Router == id {
-				route.Metric = 100
-				return
+			if rtr == id {
+				return 100
 			}
 		}
 	}
+	// otherwise we are three hops away
+	return 1000
+}
 
-	// the origin of the route is beyond our neighbourhood
-	route.Metric = 1000
+// getRouteMetric calculates router metric and returns it
+// Route metric is calculated based on link status and route hopd count
+func (n *network) getRouteMetric(router string, gateway string, link string) int64 {
+	// set the route metric
+	n.RLock()
+	defer n.RUnlock()
+
+	if link == "local" && gateway == "" {
+		return 1
+	}
+
+	if link == "local" && gateway != "" {
+		return 2
+	}
+
+	log.Tracef("Network looking up %s link to gateway: %s", link, gateway)
+	if link, ok := n.peerLinks[gateway]; ok {
+		// maka sure delay is non-zero
+		delay := link.Delay()
+		if delay == 0 {
+			delay = 1
+		}
+		// get the route hop count
+		hops := n.getHopCount(router)
+		// make sure length is non-zero
+		length := link.Length()
+		if length == 0 {
+			log.Debugf("Link length is 0 %v %v", link, link.Length())
+			length = 10e9
+		}
+		log.Tracef("Network calculated metric %v delay %v length %v distance %v", (delay*length*int64(hops))/10e6, delay, length, hops)
+		return (delay * length * int64(hops)) / 10e6
+	}
+
+	log.Debugf("Network failed to find a link to gateway: %s", gateway)
+
+	return math.MaxInt64
 }
 
 // processCtrlChan processes messages received on ControlChannel
 func (n *network) processCtrlChan(listener tunnel.Listener) {
 	// receive control message queue
-	recv := make(chan *transport.Message, 128)
+	recv := make(chan *message, 128)
 
 	// accept ControlChannel cconnections
 	go n.acceptCtrlConn(listener, recv)
@@ -640,10 +744,10 @@ func (n *network) processCtrlChan(listener tunnel.Listener) {
 		select {
 		case m := <-recv:
 			// switch on type of message and take action
-			switch m.Header["Micro-Method"] {
+			switch m.msg.Header["Micro-Method"] {
 			case "advert":
 				pbRtrAdvert := &pbRtr.Advert{}
-				if err := proto.Unmarshal(m.Body, pbRtrAdvert); err != nil {
+				if err := proto.Unmarshal(m.msg.Body, pbRtrAdvert); err != nil {
 					log.Debugf("Network fail to unmarshal advert message: %v", err)
 					continue
 				}
@@ -678,17 +782,22 @@ func (n *network) processCtrlChan(listener tunnel.Listener) {
 						Network: event.Route.Network,
 						Router:  event.Route.Router,
 						Link:    event.Route.Link,
-						Metric:  int(event.Route.Metric),
+						Metric:  event.Route.Metric,
 					}
-					// set the route metric
-					n.node.RLock()
-					n.setRouteMetric(&route)
-					n.node.RUnlock()
-					// throw away metric bigger than 1000
-					if route.Metric > 1000 {
-						log.Debugf("Network route metric %d dropping node: %s", route.Metric, route.Router)
-						continue
+					// calculate route metric and add to the advertised metric
+					// we need to make sure we do not overflow math.MaxInt64
+					metric := n.getRouteMetric(event.Route.Router, event.Route.Gateway, event.Route.Link)
+					log.Tracef("Network metric for router %s and gateway %s: %v", event.Route.Router, event.Route.Gateway, metric)
+
+					// check we don't overflow max int 64
+					if d := route.Metric + metric; d > math.MaxInt64 || d <= 0 {
+						// set to max int64 if we overflow
+						route.Metric = math.MaxInt64
+					} else {
+						// set the combined value of metrics otherwise
+						route.Metric = d
 					}
+
 					// create router event
 					e := &router.Event{
 						Type:      router.EventType(event.Type),
@@ -699,7 +808,7 @@ func (n *network) processCtrlChan(listener tunnel.Listener) {
 				}
 				// if no events are eligible for processing continue
 				if len(events) == 0 {
-					log.Debugf("Network no events to be processed by router: %s", n.options.Id)
+					log.Tracef("Network no events to be processed by router: %s", n.options.Id)
 					continue
 				}
 				// create an advert and process it
@@ -717,7 +826,7 @@ func (n *network) processCtrlChan(listener tunnel.Listener) {
 				}
 			case "solicit":
 				pbRtrSolicit := &pbRtr.Solicit{}
-				if err := proto.Unmarshal(m.Body, pbRtrSolicit); err != nil {
+				if err := proto.Unmarshal(m.msg.Body, pbRtrSolicit); err != nil {
 					log.Debugf("Network fail to unmarshal solicit message: %v", err)
 					continue
 				}
@@ -755,12 +864,15 @@ func (n *network) advertise(advertChan <-chan *router.Advert) {
 				if event.Route.Router == advert.Id {
 					// hash the service before advertising it
 					hasher.Reset()
-					hasher.Write([]byte(event.Route.Address + n.node.id))
+					// routes for multiple instances of a service will be collapsed here.
+					// TODO: once we store labels in the table this may need to change
+					// to include the labels in case they differ but highly unlikely
+					hasher.Write([]byte(event.Route.Service + n.node.Address()))
 					address = fmt.Sprintf("%d", hasher.Sum64())
 				}
-
+				// calculate route metric to advertise
+				metric := n.getRouteMetric(event.Route.Router, event.Route.Gateway, event.Route.Link)
 				// NOTE: we override Gateway, Link and Address here
-				// TODO: should we avoid overriding gateway?
 				route := &pbRtr.Route{
 					Service: event.Route.Service,
 					Address: address,
@@ -768,7 +880,7 @@ func (n *network) advertise(advertChan <-chan *router.Advert) {
 					Network: event.Route.Network,
 					Router:  event.Route.Router,
 					Link:    DefaultLink,
-					Metric:  int64(event.Route.Metric),
+					Metric:  metric,
 				}
 				e := &pbRtr.Event{
 					Type:      pbRtr.EventType(event.Type),

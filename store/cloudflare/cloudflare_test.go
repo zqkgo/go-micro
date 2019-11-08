@@ -7,7 +7,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/micro/go-micro/config/options"
 	"github.com/micro/go-micro/store"
 )
 
@@ -21,25 +20,30 @@ func TestCloudflare(t *testing.T) {
 	randomK := strconv.Itoa(rand.Int())
 	randomV := strconv.Itoa(rand.Int())
 
-	wkv, err := New(
-		options.WithValue("CF_API_TOKEN", apiToken),
-		options.WithValue("CF_ACCOUNT_ID", accountID),
-		options.WithValue("KV_NAMESPACE_ID", kvID),
+	wkv := NewStore(
+		Token(apiToken),
+		Account(accountID),
+		Namespace(kvID),
 	)
 
+	records, err := wkv.List()
 	if err != nil {
-		t.Fatal(err.Error())
+		t.Fatalf("List: %s\n", err.Error())
+	} else {
+		t.Log("Listed " + strconv.Itoa(len(records)) + " records")
 	}
 
-	_, err = wkv.Sync()
-	if err != nil {
-		t.Fatalf("Sync: %s\n", err.Error())
-	}
-
-	err = wkv.Write(&store.Record{
-		Key:   randomK,
-		Value: []byte(randomV),
-	})
+	err = wkv.Write(
+		&store.Record{
+			Key:   randomK,
+			Value: []byte(randomV),
+		},
+		&store.Record{
+			Key:    "expirationtest",
+			Value:  []byte("This message will self destruct"),
+			Expiry: 75 * time.Second,
+		},
+	)
 	if err != nil {
 		t.Errorf("Write: %s", err.Error())
 	}
@@ -56,6 +60,23 @@ func TestCloudflare(t *testing.T) {
 	}
 	if string(r[0].Value) != randomV {
 		t.Errorf("Read: expected %s, got %s\n", randomK, string(r[0].Value))
+	}
+
+	r, err = wkv.Read("expirationtest")
+	if err != nil {
+		t.Errorf("Read: expirationtest should still exist")
+	}
+	if r[0].Expiry == 0 {
+		t.Error("Expected r to have an expiry")
+	} else {
+		t.Log(r[0].Expiry)
+	}
+
+	time.Sleep(20 * time.Second)
+	r, err = wkv.Read("expirationtest")
+	if err == nil && len(r) != 0 {
+		t.Error("Read: Managed to read expirationtest, but it should have expired")
+		t.Log(err, r[0].Key, string(r[0].Value), r[0].Expiry, len(r))
 	}
 
 	err = wkv.Delete(randomK)

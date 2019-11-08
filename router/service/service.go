@@ -132,7 +132,7 @@ func (s *svc) advertiseEvents(advertChan chan *router.Advert, stream pb.Router_A
 				Gateway: event.Route.Gateway,
 				Network: event.Route.Network,
 				Link:    event.Route.Link,
-				Metric:  int(event.Route.Metric),
+				Metric:  event.Route.Metric,
 			}
 
 			events[i] = &router.Event{
@@ -188,7 +188,7 @@ func (s *svc) Advertise() (<-chan *router.Advert, error) {
 
 // Process processes incoming adverts
 func (s *svc) Process(advert *router.Advert) error {
-	var events []*pb.Event
+	events := make([]*pb.Event, 0, len(advert.Events))
 	for _, event := range advert.Events {
 		route := &pb.Route{
 			Service: event.Route.Service,
@@ -196,7 +196,7 @@ func (s *svc) Process(advert *router.Advert) error {
 			Gateway: event.Route.Gateway,
 			Network: event.Route.Network,
 			Link:    event.Route.Link,
-			Metric:  int64(event.Route.Metric),
+			Metric:  event.Route.Metric,
 		}
 		e := &pb.Event{
 			Type:      pb.EventType(event.Type),
@@ -230,7 +230,7 @@ func (s *svc) Solicit() error {
 
 	// build events to advertise
 	events := make([]*router.Event, len(routes))
-	for i, _ := range events {
+	for i := range events {
 		events[i] = &router.Event{
 			Type:      router.Update,
 			Timestamp: time.Now(),
@@ -346,7 +346,7 @@ func (s *svc) Lookup(q ...router.QueryOption) ([]router.Route, error) {
 			Gateway: route.Gateway,
 			Network: route.Network,
 			Link:    route.Link,
-			Metric:  int(route.Metric),
+			Metric:  route.Metric,
 		}
 	}
 

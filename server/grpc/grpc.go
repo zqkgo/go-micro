@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"net"
 	"reflect"
+	"runtime/debug"
 	"sort"
 	"strconv"
 	"strings"
@@ -374,7 +375,8 @@ func (g *grpcServer) processRequest(stream grpc.ServerStream, service *service, 
 		fn := func(ctx context.Context, req server.Request, rsp interface{}) error {
 			defer func() {
 				if r := recover(); r != nil {
-					log.Logf("handler %s panic recovered, err: %s", mtype.method.Name, r)
+					log.Log("panic recovered: ", r)
+					log.Logf(string(debug.Stack()))
 				}
 			}()
 			returnValues = function.Call([]reflect.Value{service.rcvr, mtype.prepareContext(ctx), reflect.ValueOf(argv.Interface()), reflect.ValueOf(rsp)})
@@ -668,7 +670,7 @@ func (g *grpcServer) Register() error {
 
 	g.registered = true
 
-	for sb, _ := range g.subscribers {
+	for sb := range g.subscribers {
 		// 构造一个handler，注册到broker，当消息到达时会调用该handelr。
 		handler := g.createSubHandler(sb, g.opts)
 		var opts []broker.SubscribeOption

@@ -32,7 +32,7 @@ func (e *ekv) Read(keys ...string) ([]*store.Record, error) {
 		values = append(values, keyval.Kvs...)
 	}
 
-	var records []*store.Record
+	records := make([]*store.Record, 0, len(values))
 
 	for _, kv := range values {
 		records = append(records, &store.Record{
@@ -68,7 +68,7 @@ func (e *ekv) Write(records ...*store.Record) error {
 	return gerr
 }
 
-func (e *ekv) Sync() ([]*store.Record, error) {
+func (e *ekv) List() ([]*store.Record, error) {
 	keyval, err := e.kv.Get(context.Background(), "/", client.WithPrefix())
 	if err != nil {
 		return nil, err

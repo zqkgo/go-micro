@@ -490,7 +490,7 @@ func (s *rpcServer) Register() error {
 		return subscriberList[i].topic > subscriberList[j].topic
 	})
 
-	var endpoints []*registry.Endpoint
+	endpoints := make([]*registry.Endpoint, 0, len(handlerList)+len(subscriberList))
 	for _, n := range handlerList {
 		endpoints = append(endpoints, s.handlers[n].Endpoints()...)
 	}
@@ -531,7 +531,7 @@ func (s *rpcServer) Register() error {
 
 	s.registered = true
 
-	for sb, _ := range s.subscribers {
+	for sb := range s.subscribers {
 		handler := s.createSubHandler(sb, s.opts)
 		var opts []broker.SubscribeOption
 		if queue := sb.Options().Queue; len(queue) > 0 {

@@ -4,26 +4,23 @@ package store
 import (
 	"errors"
 	"time"
-
-	"github.com/micro/go-micro/config/options"
 )
 
 var (
+	// ErrNotFound is returned when a Read key doesn't exist
 	ErrNotFound = errors.New("not found")
 )
 
 // Store is a data storage interface
 type Store interface {
-	// embed options
-	options.Options
-	// Sync all the known records
-	Sync() ([]*Record, error)
-	// Read a record with key
-	Read(keys ...string) ([]*Record, error)
-	// Write a record
-	Write(recs ...*Record) error
-	// Delete a record with key
-	Delete(keys ...string) error
+	// List all the known records
+	List() ([]*Record, error)
+	// Read records with keys
+	Read(key ...string) ([]*Record, error)
+	// Write records
+	Write(rec ...*Record) error
+	// Delete records with keys
+	Delete(key ...string) error
 }
 
 // Record represents a data record

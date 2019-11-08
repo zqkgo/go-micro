@@ -202,8 +202,8 @@ func testBrokenTunAccept(t *testing.T, tun Tunnel, wait chan bool, wg *sync.Wait
 		t.Fatal(err)
 	}
 
-	// notify sender we have received the message
-	<-wait
+	// notify the sender we have received
+	wait <- true
 }
 
 func testBrokenTunSend(t *testing.T, tun Tunnel, wait chan bool, wg *sync.WaitGroup) {
@@ -234,7 +234,7 @@ func testBrokenTunSend(t *testing.T, tun Tunnel, wait chan bool, wg *sync.WaitGr
 	<-wait
 
 	// give it time to reconnect
-	time.Sleep(2 * ReconnectTime)
+	time.Sleep(5 * ReconnectTime)
 
 	// send the message
 	if err := c.Send(&m); err != nil {
@@ -244,7 +244,7 @@ func testBrokenTunSend(t *testing.T, tun Tunnel, wait chan bool, wg *sync.WaitGr
 	// wait for the listener to receive the message
 	// c.Send merely enqueues the message to the link send queue and returns
 	// in order to verify it was received we wait for the listener to tell us
-	wait <- true
+	<-wait
 }
 
 func TestReconnectTunnel(t *testing.T) {
@@ -291,4 +291,54 @@ func TestReconnectTunnel(t *testing.T) {
 
 	// wait until done
 	wg.Wait()
+}
+
+func TestTunnelRTTRate(t *testing.T) {
+	// create a new tunnel client
+	tunA := NewTunnel(
+		Address("127.0.0.1:9096"),
+		Nodes("127.0.0.1:9097"),
+	)
+
+	// create a new tunnel server
+	tunB := NewTunnel(
+		Address("127.0.0.1:9097"),
+	)
+
+	// start tunB
+	err := tunB.Connect()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer tunB.Close()
+
+	// start tunA
+	err = tunA.Connect()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer tunA.Close()
+
+	wait := make(chan bool)
+
+	var wg sync.WaitGroup
+
+	wg.Add(1)
+	// start the listener
+	go testAccept(t, tunB, wait, &wg)
+
+	wg.Add(1)
+	// start the client
+	go testSend(t, tunA, wait, &wg)
+
+	// wait until done
+	wg.Wait()
+
+	for _, link := range tunA.Links() {
+		t.Logf("Link %s length %v rate %v", link.Id(), link.Length(), link.Rate())
+	}
+
+	for _, link := range tunB.Links() {
+		t.Logf("Link %s length %v rate %v", link.Id(), link.Length(), link.Rate())
+	}
 }

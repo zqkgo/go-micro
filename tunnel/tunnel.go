@@ -57,8 +57,14 @@ type Tunnel interface {
 type Link interface {
 	// The id of the link
 	Id() string
-	// Status of the link e.g connected/closed
-	Status() string
+	// Delay is the current load on the link (lower is better)
+	Delay() int64
+	// Length returns the roundtrip time as nanoseconds (lower is better)
+	Length() int64
+	// Current transfer rate as bits per second (lower is better)
+	Rate() float64
+	// State of the link e.g connected/closed
+	State() string
 	// honours transport socket
 	transport.Socket
 }

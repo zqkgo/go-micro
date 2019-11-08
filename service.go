@@ -10,6 +10,8 @@ import (
 	"github.com/micro/go-micro/client"
 	"github.com/micro/go-micro/config/cmd"
 	"github.com/micro/go-micro/debug/handler"
+	"github.com/micro/go-micro/debug/profile"
+	"github.com/micro/go-micro/debug/profile/pprof"
 	"github.com/micro/go-micro/metadata"
 	"github.com/micro/go-micro/plugin"
 	"github.com/micro/go-micro/server"
@@ -154,6 +156,20 @@ func (s *service) Run() error {
 			server.InternalHandler(true), // 标识注册到服务发现
 		),
 	)
+
+	// start the profiler
+	// TODO: set as an option to the service, don't just use pprof
+	if prof := os.Getenv("MICRO_DEBUG_PROFILE"); len(prof) > 0 {
+		service := s.opts.Server.Options().Name
+		version := s.opts.Server.Options().Version
+		profiler := pprof.NewProfile(
+			profile.Name(service + "." + version),
+		)
+		if err := profiler.Start(); err != nil {
+			return err
+		}
+		defer profiler.Stop()
+	}
 
 	if err := s.Start(); err != nil {
 		return err

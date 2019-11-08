@@ -82,7 +82,7 @@ func (s *service) genSrv() *registry.Service {
 	return &registry.Service{
 		Name:    s.opts.Name,
 		Version: s.opts.Version,
-		Nodes: []*registry.Node{&registry.Node{
+		Nodes: []*registry.Node{{
 			Id:       s.opts.Id,
 			Address:  fmt.Sprintf("%s:%d", addr, port),
 			Metadata: s.opts.Metadata,
@@ -118,6 +118,11 @@ func (s *service) register() error {
 	if s.opts.Registry != nil {
 		r = s.opts.Registry
 	}
+
+	// service node need modify, node address maybe changed
+	srv := s.genSrv()
+	srv.Endpoints = s.srv.Endpoints
+	s.srv = srv
 	return r.Register(s.srv, registry.RegisterTTL(s.opts.RegisterTTL))
 }
 

@@ -5,6 +5,7 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
+	"sort"
 
 	"github.com/micro/go-micro/store"
 	ckv "github.com/micro/go-micro/store/etcd"
@@ -89,10 +90,14 @@ func (m *syncMap) Delete(key interface{}) error {
 }
 
 func (m *syncMap) Iterate(fn func(key, val interface{}) error) error {
-	keyvals, err := m.opts.Store.Sync()
+	keyvals, err := m.opts.Store.List()
 	if err != nil {
 		return err
 	}
+
+	sort.Slice(keyvals, func(i, j int) bool {
+		return keyvals[i].Key < keyvals[j].Key
+	})
 
 	for _, keyval := range keyvals {
 		// lock
