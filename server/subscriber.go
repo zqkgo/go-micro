@@ -24,6 +24,7 @@ type handler struct {
 	ctxType reflect.Type
 }
 
+// 该数据结构的作用主要是存储subscriber信息
 type subscriber struct {
 	topic      string
 	rcvr       reflect.Value
@@ -55,6 +56,7 @@ func newSubscriber(topic string, sub interface{}, opts ...SubscriberOption) Subs
 		case 1:
 			h.reqType = typ.In(0)
 		case 2:
+			// 如果是两个入参则第一个是context type，第二个才是参数type
 			h.ctxType = typ.In(0)
 			h.reqType = typ.In(1)
 		}
@@ -72,7 +74,6 @@ func newSubscriber(topic string, sub interface{}, opts ...SubscriberOption) Subs
 	} else {
 		hdlr := reflect.ValueOf(sub)
 		name := reflect.Indirect(hdlr).Type().Name()
-
 		for m := 0; m < typ.NumMethod(); m++ {
 			method := typ.Method(m)
 			h := &handler{
@@ -115,17 +116,21 @@ func validateSubscriber(sub Subscriber) error {
 	typ := reflect.TypeOf(sub.Subscriber())
 	var argType reflect.Type
 
+	// 如果是函数
 	if typ.Kind() == reflect.Func {
 		name := "Func"
+		// 根据入参个数获取除第一个context外的参数类型
 		switch typ.NumIn() {
 		case 2:
 			argType = typ.In(1)
 		default:
 			return fmt.Errorf("subscriber %v takes wrong number of args: %v required signature %s", name, typ.NumIn(), subSig)
 		}
+		// 判断是否是内置类型或者可exported的类型，例如type event struct{}属非法
 		if !isExportedOrBuiltinType(argType) {
 			return fmt.Errorf("subscriber %v argument type not exported: %v", name, argType)
 		}
+		// 出参只能有1个并且是error类型
 		if typ.NumOut() != 1 {
 			return fmt.Errorf("subscriber %v has wrong number of outs: %v require signature %s",
 				name, typ.NumOut(), subSig)
@@ -136,7 +141,7 @@ func validateSubscriber(sub Subscriber) error {
 	} else {
 		hdlr := reflect.ValueOf(sub.Subscriber())
 		name := reflect.Indirect(hdlr).Type().Name()
-
+		// 遍历receiver类型的每一个方法，处理方式与函数类似
 		for m := 0; m < typ.NumMethod(); m++ {
 			method := typ.Method(m)
 

@@ -58,6 +58,7 @@ type grpcServer struct {
 	// 服务名 -> 服务handler，即一个server可以同时提供多个服务。
 	// 注册服务时，根据该成员找到所有handler的endpoints集合
 	handlers    map[string]server.Handler
+	// 遍历每个subscriber注册到broker
 	subscribers map[*subscriber][]broker.Subscriber
 	// marks the serve as started
 	started bool
