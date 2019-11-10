@@ -29,13 +29,15 @@ import (
 
 // HTTP Broker is a point to point async broker
 type httpBroker struct {
-	id      string
+	id string
+	// 被监听的地址+端口
 	address string
 	opts    Options
 
 	mux *http.ServeMux
 
 	c *http.Client
+	// 带缓存封装的registry
 	r registry.Registry
 
 	sync.RWMutex
@@ -136,7 +138,8 @@ func newHttpBroker(opts ...Option) Broker {
 		mux:         http.NewServeMux(),
 		inbox:       make(map[string][][]byte),
 	}
-
+	
+	// 
 	// specify the message handler
 	h.mux.Handle(DefaultSubPath, h)
 
@@ -259,6 +262,7 @@ func (h *httpBroker) run(l net.Listener) {
 	t := time.NewTicker(registerInterval)
 	defer t.Stop()
 
+	// 定时向registry注册subscribers
 	for {
 		select {
 		// heartbeat for each subscriber
@@ -348,6 +352,7 @@ func (h *httpBroker) Address() string {
 }
 
 func (h *httpBroker) Connect() error {
+	// 是否已经正在运行
 	h.RLock()
 	if h.running {
 		h.RUnlock()
@@ -361,6 +366,7 @@ func (h *httpBroker) Connect() error {
 	var l net.Listener
 	var err error
 
+	// 如果需要建立TLS连接
 	if h.opts.Secure || h.opts.TLSConfig != nil {
 		config := h.opts.TLSConfig
 
@@ -368,6 +374,7 @@ func (h *httpBroker) Connect() error {
 			if config == nil {
 				hosts := []string{addr}
 
+				// 获取配置地址的host
 				// check if its a valid host:port
 				if host, _, err := net.SplitHostPort(addr); err == nil {
 					if len(host) == 0 {
@@ -377,6 +384,7 @@ func (h *httpBroker) Connect() error {
 					}
 				}
 
+				// 为指定host生成证书
 				// generate a certificate
 				cert, err := mls.Certificate(hosts...)
 				if err != nil {
@@ -384,6 +392,7 @@ func (h *httpBroker) Connect() error {
 				}
 				config = &tls.Config{Certificates: []tls.Certificate{cert}}
 			}
+			// 构造TLS listener
 			return tls.Listen("tcp", addr, config)
 		}
 
@@ -403,9 +412,12 @@ func (h *httpBroker) Connect() error {
 	addr := h.address
 	h.address = l.Addr().String()
 
+	// 启动http server
 	go http.Serve(l, h.mux)
 	go func() {
+		// 定时向registry注册subscribers
 		h.run(l)
+		// 还原？
 		h.Lock()
 		h.opts.Addrs = []string{addr}
 		h.address = addr

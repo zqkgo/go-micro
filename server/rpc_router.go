@@ -32,6 +32,7 @@ var (
 	typeOfError = reflect.TypeOf((*error)(nil)).Elem()
 )
 
+// 存储方法的参数类型信息
 type methodType struct {
 	sync.Mutex  // protects counters
 	method      reflect.Method
@@ -42,7 +43,9 @@ type methodType struct {
 }
 
 type service struct {
-	name   string                 // name of service
+	// 服务名称
+	name string // name of service
+	// 服务receiver的初始化值
 	rcvr   reflect.Value          // receiver of methods for the service
 	typ    reflect.Type           // type of the receiver
 	method map[string]*methodType // registered methods
@@ -100,11 +103,14 @@ func prepareMethod(method reflect.Method) *methodType {
 	var replyType, argType, contextType reflect.Type
 	var stream bool
 
+	// 方法必须是可exported的
 	// Method must be exported.
 	if method.PkgPath != "" {
 		return nil
 	}
 
+	// 根据方法入参个数获取请求、响应、context类型
+	// 如果是三个参数，没有响应对象，认为是接受stream类型的请求
 	switch mtype.NumIn() {
 	case 3:
 		// assuming streaming
@@ -121,6 +127,7 @@ func prepareMethod(method reflect.Method) *methodType {
 		return nil
 	}
 
+	// 检查入参类型是否合法
 	if stream {
 		// check stream type
 		streamType := reflect.TypeOf((*Stream)(nil)).Elem()
@@ -149,11 +156,13 @@ func prepareMethod(method reflect.Method) *methodType {
 		}
 	}
 
+	// 出参只能有一个
 	// Method needs one out.
 	if mtype.NumOut() != 1 {
 		log.Log("method", mname, "has wrong number of outs:", mtype.NumOut())
 		return nil
 	}
+	// 出参类型必须是error类型
 	// The return type of the method must be error.
 	if returnType := mtype.Out(0); returnType != typeOfError {
 		log.Log("method", mname, "returns", returnType.String(), "not error")
@@ -396,6 +405,7 @@ func (router *router) Handle(h Handler) error {
 		router.serviceMap = make(map[string]*service)
 	}
 
+	// 检查服务名称
 	if len(h.Name()) == 0 {
 		return errors.New("rpc.Handle: handler has no name")
 	}
@@ -416,6 +426,7 @@ func (router *router) Handle(h Handler) error {
 	s.name = h.Name()
 	s.method = make(map[string]*methodType)
 
+	// 遍历recever的每一个方法获取参数类型信息
 	// Install the methods
 	for m := 0; m < s.typ.NumMethod(); m++ {
 		method := s.typ.Method(m)

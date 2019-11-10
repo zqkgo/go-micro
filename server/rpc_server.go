@@ -28,7 +28,8 @@ type rpcServer struct {
 	exit   chan chan error
 
 	sync.RWMutex
-	opts        Options
+	opts Options
+	// 服务名到服务handler的映射
 	handlers    map[string]Handler
 	subscribers map[*subscriber][]broker.Subscriber
 	// marks the serve as started
@@ -395,7 +396,7 @@ func (s *rpcServer) Subscribe(sb Subscriber) error {
 	if !ok {
 		return fmt.Errorf("invalid subscriber: expected *subscriber")
 	}
-	if len(sub.handlers) == 0 {	
+	if len(sub.handlers) == 0 {
 		return fmt.Errorf("invalid subscriber: no handler functions")
 	}
 
@@ -429,6 +430,7 @@ func (s *rpcServer) Register() error {
 		advt = config.Address
 	}
 
+	// 如果地址带端口则分离之
 	if cnt := strings.Count(advt, ":"); cnt >= 1 {
 		// ipv6 address in format [host]:port or ipv4 host:port
 		host, port, err = net.SplitHostPort(advt)
@@ -439,6 +441,7 @@ func (s *rpcServer) Register() error {
 		host = advt
 	}
 
+	// 处理host，如果host不合法则获取本机ip地址
 	addr, err := addr.Extract(host)
 	if err != nil {
 		return err
@@ -640,6 +643,7 @@ func (s *rpcServer) Start() error {
 	config := s.Options()
 
 	// start listening on the transport
+	// 默认使用transport的http实现
 	ts, err := config.Transport.Listen(config.Address)
 	if err != nil {
 		return err
@@ -654,6 +658,7 @@ func (s *rpcServer) Start() error {
 	s.Unlock()
 
 	// connect to the broker
+	// 启动broker server
 	if err := config.Broker.Connect(); err != nil {
 		return err
 	}
@@ -666,6 +671,7 @@ func (s *rpcServer) Start() error {
 	if err = s.opts.RegisterCheck(s.opts.Context); err != nil {
 		log.Logf("Server %s-%s register check error: %s", config.Name, config.Id, err)
 	} else {
+		// 将服务注册到registry，同时将subscriber也作为服务注册到registry
 		// announce self to the world
 		if err = s.Register(); err != nil {
 			log.Logf("Server %s-%s register error: %s", config.Name, config.Id, err)

@@ -10,6 +10,7 @@ import (
 
 type Options struct {
 	Addrs     []string
+	// 是否要建立TLS连接
 	Secure    bool
 	Codec     codec.Marshaler
 	TLSConfig *tls.Config

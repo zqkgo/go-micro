@@ -517,6 +517,7 @@ func (h *httpTransport) Dial(addr string, opts ...DialOption) (Client, error) {
 	}, nil
 }
 
+// 构造一个可以accept连接的listener或tls listener
 func (h *httpTransport) Listen(addr string, opts ...ListenOption) (Listener, error) {
 	var options ListenOptions
 	for _, o := range opts {

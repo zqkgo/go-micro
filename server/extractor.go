@@ -67,6 +67,7 @@ func extractValue(v reflect.Type, d int) *registry.Value {
 }
 
 func extractEndpoint(method reflect.Method) *registry.Endpoint {
+	// 检查是否为exported方法
 	if method.PkgPath != "" {
 		return nil
 	}
@@ -74,7 +75,8 @@ func extractEndpoint(method reflect.Method) *registry.Endpoint {
 	var rspType, reqType reflect.Type
 	var stream bool
 	mt := method.Type
-
+	
+	// 根据入参个数获取请求和响应类型
 	switch mt.NumIn() {
 	case 3:
 		reqType = mt.In(1)

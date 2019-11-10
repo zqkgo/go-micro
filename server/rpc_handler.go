@@ -7,8 +7,11 @@ import (
 )
 
 type rpcHandler struct {
-	name      string
-	handler   interface{}
+	// 服务名
+	name string
+	// 方法的receiver
+	handler interface{}
+	// 用于注册到registry
 	endpoints []*registry.Endpoint
 	opts      HandlerOptions
 }
@@ -24,10 +27,12 @@ func newRpcHandler(handler interface{}, opts ...HandlerOption) Handler {
 
 	typ := reflect.TypeOf(handler)
 	hdlr := reflect.ValueOf(handler)
+	// hdlr可能是指针或值，这里必然是指针
 	name := reflect.Indirect(hdlr).Type().Name()
 
 	var endpoints []*registry.Endpoint
 
+	// 遍历服务的每个方法构造可用于服务注册的对象
 	for m := 0; m < typ.NumMethod(); m++ {
 		if e := extractEndpoint(typ.Method(m)); e != nil {
 			e.Name = name + "." + e.Name
