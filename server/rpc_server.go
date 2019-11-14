@@ -643,7 +643,7 @@ func (s *rpcServer) Start() error {
 	config := s.Options()
 
 	// start listening on the transport
-	// 默认使用transport的http实现
+	// 默认使用transport的http实现，net.Listen
 	ts, err := config.Transport.Listen(config.Address)
 	if err != nil {
 		return err
@@ -658,7 +658,7 @@ func (s *rpcServer) Start() error {
 	s.Unlock()
 
 	// connect to the broker
-	// 启动broker server
+	// 启动broker server，以topic为servic name注册到registry
 	if err := config.Broker.Connect(); err != nil {
 		return err
 	}

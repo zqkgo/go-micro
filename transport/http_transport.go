@@ -396,14 +396,18 @@ func (h *httpTransportListener) Accept(fn func(Socket)) error {
 		var buf *bufio.ReadWriter
 		var con net.Conn
 
+		// 主版本号是1，说明http版本是1.1
 		// read a regular request
 		if r.ProtoMajor == 1 {
+			// 读取请求体数据
 			b, err := ioutil.ReadAll(r.Body)
 			if err != nil {
 				http.Error(w, err.Error(), http.StatusInternalServerError)
 				return
 			}
+			// 将请求体转化为不可Close？
 			r.Body = ioutil.NopCloser(bytes.NewReader(b))
+			// w是否实现了http.Hijacker，即是否能接管连接
 			// hijack the conn
 			hj, ok := w.(http.Hijacker)
 			if !ok {
@@ -412,6 +416,7 @@ func (h *httpTransportListener) Accept(fn func(Socket)) error {
 				return
 			}
 
+			// 接管连接
 			conn, bufrw, err := hj.Hijack()
 			if err != nil {
 				http.Error(w, err.Error(), http.StatusInternalServerError)
