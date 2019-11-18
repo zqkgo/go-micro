@@ -38,6 +38,8 @@ type Options struct {
 	// can be stored in a context
 	// 保存其他配置项
 	Context context.Context
+
+	Signal bool
 }
 
 // 首先会创建一个Options对象，Options对象所持有的客户端、服务端、注册中心等
@@ -53,6 +55,7 @@ func newOptions(opts ...Option) Options {
 		Registry:  registry.DefaultRegistry,
 		Transport: transport.DefaultTransport,
 		Context:   context.Background(),
+		Signal:    true,
 	}
 	// 因为Option是函数类型，所以可以修改Options对象
 	for _, o := range opts {
@@ -89,6 +92,15 @@ func Client(c client.Client) Option {
 func Context(ctx context.Context) Option {
 	return func(o *Options) {
 		o.Context = ctx
+	}
+}
+
+// HandleSignal toggles automatic installation of the signal handler that
+// traps TERM, INT, and QUIT.  Users of this feature to disable the signal
+// handler, should control liveness of the service through the context.
+func HandleSignal(b bool) Option {
+	return func(o *Options) {
+		o.Signal = b
 	}
 }
 

@@ -57,7 +57,7 @@ type grpcServer struct {
 	opts server.Options
 	// 服务名 -> 服务handler，即一个server可以同时提供多个服务。
 	// 注册服务时，根据该成员找到所有handler的endpoints集合
-	handlers    map[string]server.Handler
+	handlers map[string]server.Handler
 	// 遍历每个subscriber注册到broker
 	subscribers map[*subscriber][]broker.Subscriber
 	// marks the serve as started
@@ -627,8 +627,7 @@ func (g *grpcServer) Register() error {
 		return subscriberList[i].topic > subscriberList[j].topic
 	})
 
-	// 所有"终端"方法
-	var endpoints []*registry.Endpoint
+	endpoints := make([]*registry.Endpoint, 0, len(handlerList)+len(subscriberList))
 	for _, n := range handlerList {
 		endpoints = append(endpoints, g.handlers[n].Endpoints()...)
 	}
