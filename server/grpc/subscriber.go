@@ -4,12 +4,15 @@ import (
 	"context"
 	"fmt"
 	"reflect"
+	"runtime/debug"
 	"strings"
 
 	"github.com/micro/go-micro/broker"
+	"github.com/micro/go-micro/errors"
 	"github.com/micro/go-micro/metadata"
 	"github.com/micro/go-micro/registry"
 	"github.com/micro/go-micro/server"
+	"github.com/micro/go-micro/util/log"
 )
 
 const (
@@ -46,7 +49,6 @@ type subscriber struct {
 }
 
 func newSubscriber(topic string, sub interface{}, opts ...server.SubscriberOption) server.Subscriber {
-
 	options := server.SubscriberOptions{
 		AutoAck: true,
 	}
@@ -181,6 +183,16 @@ func validateSubscriber(sub server.Subscriber) error {
 // 构造一个handler，注册到broker，当消息到达时会调用该handelr。
 func (g *grpcServer) createSubHandler(sb *subscriber, opts server.Options) broker.Handler {
 	return func(p broker.Event) error {
+		var err error
+
+		defer func() {
+			if r := recover(); r != nil {
+				log.Log("panic recovered: ", r)
+				log.Logf(string(debug.Stack()))
+				err = errors.InternalServerError("go.micro.server", "panic recovered: %v", r)
+			}
+		}()
+
 		msg := p.Message()
 		ct := msg.Header["Content-Type"]
 		if len(ct) == 0 {
@@ -222,7 +234,7 @@ func (g *grpcServer) createSubHandler(sb *subscriber, opts server.Options) broke
 			}
 
 			// 将消息体解码到入参
-			if err := cf.Unmarshal(msg.Body, req.Interface()); err != nil {
+			if err = cf.Unmarshal(msg.Body, req.Interface()); err != nil {
 				return err
 			}
 
@@ -240,8 +252,8 @@ func (g *grpcServer) createSubHandler(sb *subscriber, opts server.Options) broke
 
 				// 最终调用handler
 				returnValues := handler.method.Call(vals)
-				if err := returnValues[0].Interface(); err != nil {
-					return err.(error)
+				if rerr := returnValues[0].Interface(); rerr != nil {
+					return rerr.(error)
 				}
 				return nil
 			}
@@ -263,20 +275,23 @@ func (g *grpcServer) createSubHandler(sb *subscriber, opts server.Options) broke
 					topic:       sb.topic,
 					contentType: ct,
 					payload:     req.Interface(),
+					header:      msg.Header,
+					body:        msg.Body,
 				})
 			}()
 		}
 		// 收集subscribers的每个handler的执行错误结果
 		var errors []string
 		for i := 0; i < len(sb.handlers); i++ {
-			if err := <-results; err != nil {
-				errors = append(errors, err.Error())
+			if rerr := <-results; err != nil {
+				errors = append(errors, rerr.Error())
 			}
 		}
 		if len(errors) > 0 {
-			return fmt.Errorf("subscriber error: %s", strings.Join(errors, "\n"))
+			err = fmt.Errorf("subscriber error: %s", strings.Join(errors, "\n"))
 		}
-		return nil
+
+		return err
 	}
 }
 

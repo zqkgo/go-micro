@@ -29,10 +29,11 @@ func flatten(n network.Node, visited map[string]bool) []network.Node {
 	}
 
 	// create new list of nodes
+	//nolint:prealloc
 	var nodes []network.Node
 
 	// check if already visited
-	if visited[n.Id()] == false {
+	if !visited[n.Id()] {
 		// append the current node
 		nodes = append(nodes, n)
 	}
@@ -54,7 +55,7 @@ func (n *Network) Connect(ctx context.Context, req *pbNet.ConnectRequest, resp *
 	}
 
 	// get list of existing nodes
-	nodes := n.Network.Options().Peers
+	nodes := n.Network.Options().Nodes
 
 	// generate a node map
 	nodeMap := make(map[string]bool)
@@ -83,7 +84,7 @@ func (n *Network) Connect(ctx context.Context, req *pbNet.ConnectRequest, resp *
 
 	// reinitialise the peers
 	n.Network.Init(
-		network.Peers(nodes...),
+		network.Nodes(nodes...),
 	)
 
 	// call the connect method
@@ -94,11 +95,6 @@ func (n *Network) Connect(ctx context.Context, req *pbNet.ConnectRequest, resp *
 
 // Nodes returns the list of nodes
 func (n *Network) Nodes(ctx context.Context, req *pbNet.NodesRequest, resp *pbNet.NodesResponse) error {
-	depth := uint(req.Depth)
-	if depth <= 0 || depth > network.MaxDepth {
-		depth = network.MaxDepth
-	}
-
 	// root node
 	nodes := map[string]network.Node{}
 

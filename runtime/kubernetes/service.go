@@ -2,6 +2,7 @@ package kubernetes
 
 import (
 	"strings"
+	"time"
 
 	"github.com/micro/go-micro/runtime"
 	"github.com/micro/go-micro/runtime/kubernetes/client"
@@ -18,24 +19,46 @@ type service struct {
 }
 
 func newService(s *runtime.Service, c runtime.CreateOptions) *service {
-	kservice := client.DefaultService(s.Name, s.Version)
-	kdeploy := client.DefaultDeployment(s.Name, s.Version)
+	// use pre-formatted name/version
+	name := client.Format(s.Name)
+	version := client.Format(s.Version)
 
+	kservice := client.NewService(name, version, c.Type)
+	kdeploy := client.NewDeployment(name, version, c.Type)
+
+	// attach our values to the deployment; name, version, source
+	kdeploy.Metadata.Annotations["name"] = s.Name
+	kdeploy.Metadata.Annotations["version"] = s.Version
+	kdeploy.Metadata.Annotations["source"] = s.Source
+
+	// associate owner:group to be later augmented
+	kdeploy.Metadata.Annotations["owner"] = "micro"
+	kdeploy.Metadata.Annotations["group"] = "micro"
+
+	// set a build timestamp to the current time
+	if kdeploy.Spec.Template.Metadata.Annotations == nil {
+		kdeploy.Spec.Template.Metadata.Annotations = make(map[string]string)
+	}
+	kdeploy.Spec.Template.Metadata.Annotations["build"] = time.Now().Format(time.RFC3339)
+
+	// define the environment values used by the container
 	env := make([]client.EnvVar, 0, len(c.Env))
 	for _, evar := range c.Env {
 		evarPair := strings.Split(evar, "=")
 		env = append(env, client.EnvVar{Name: evarPair[0], Value: evarPair[1]})
 	}
 
-	// TODO: should we append instead of overriding?
-	// if environment has been supplied update deployment
+	// if environment has been supplied update deployment default environment
 	if len(env) > 0 {
-		kdeploy.Spec.Template.PodSpec.Containers[0].Env = env
+		kdeploy.Spec.Template.PodSpec.Containers[0].Env = append(kdeploy.Spec.Template.PodSpec.Containers[0].Env, env...)
 	}
 
-	// if Command has been supplied override the default command
+	// specify the command to exec
 	if len(c.Command) > 0 {
 		kdeploy.Spec.Template.PodSpec.Containers[0].Command = c.Command
+	} else if len(s.Source) > 0 {
+		// default command for our k8s service should be source
+		kdeploy.Spec.Template.PodSpec.Containers[0].Command = []string{"go", "run", s.Source}
 	}
 
 	return &service{

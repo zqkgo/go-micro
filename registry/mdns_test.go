@@ -1,6 +1,7 @@
 package registry
 
 import (
+	"os"
 	"testing"
 	"time"
 )
@@ -48,8 +49,16 @@ func TestMDNS(t *testing.T) {
 		},
 	}
 
+	travis := os.Getenv("TRAVIS")
+
+	var opts []Option
+
+	if travis == "true" {
+		opts = append(opts, Timeout(time.Millisecond*100))
+	}
+
 	// new registry
-	r := NewRegistry()
+	r := NewRegistry(opts...)
 
 	for _, service := range testData {
 		// register service

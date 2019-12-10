@@ -14,33 +14,27 @@ type Runtime struct {
 
 func toProto(s *runtime.Service) *pb.Service {
 	return &pb.Service{
-		Name:    s.Name,
-		Version: s.Version,
-		Source:  s.Source,
-		Path:    s.Path,
-		Exec:    s.Exec,
+		Name:     s.Name,
+		Version:  s.Version,
+		Source:   s.Source,
+		Metadata: s.Metadata,
 	}
 }
 
 func toService(s *pb.Service) *runtime.Service {
 	return &runtime.Service{
-		Name:    s.Name,
-		Version: s.Version,
-		Source:  s.Source,
-		Path:    s.Path,
-		Exec:    s.Exec,
+		Name:     s.Name,
+		Version:  s.Version,
+		Source:   s.Source,
+		Metadata: s.Metadata,
 	}
 }
 
 func toCreateOptions(opts *pb.CreateOptions) []runtime.CreateOption {
 	options := []runtime.CreateOption{}
 	// command options
-	l := len(opts.Command)
-	if l == 1 {
-		options = append(options, runtime.WithCommand(opts.Command[0]))
-	}
-	if l > 1 {
-		options = append(options, runtime.WithCommand(opts.Command[0], opts.Command[1:]...))
+	if len(opts.Command) > 0 {
+		options = append(options, runtime.WithCommand(opts.Command...))
 	}
 	// env options
 	if len(opts.Env) > 0 {
@@ -52,11 +46,16 @@ func toCreateOptions(opts *pb.CreateOptions) []runtime.CreateOption {
 	return options
 }
 
-func toGetOptions(opts *pb.GetOptions) []runtime.GetOption {
-	options := []runtime.GetOption{}
-	// version options
+func toReadOptions(opts *pb.ReadOptions) []runtime.ReadOption {
+	options := []runtime.ReadOption{}
+	if len(opts.Service) > 0 {
+		options = append(options, runtime.ReadService(opts.Service))
+	}
 	if len(opts.Version) > 0 {
-		options = append(options, runtime.WithVersion(opts.Version))
+		options = append(options, runtime.ReadVersion(opts.Version))
+	}
+	if len(opts.Type) > 0 {
+		options = append(options, runtime.ReadType(opts.Type))
 	}
 
 	return options
@@ -81,17 +80,13 @@ func (r *Runtime) Create(ctx context.Context, req *pb.CreateRequest, rsp *pb.Cre
 	return nil
 }
 
-func (r *Runtime) Get(ctx context.Context, req *pb.GetRequest, rsp *pb.GetResponse) error {
-	if len(req.Name) == 0 {
-		return errors.BadRequest("go.micro.runtime", "blank service")
-	}
-
-	var options []runtime.GetOption
+func (r *Runtime) Read(ctx context.Context, req *pb.ReadRequest, rsp *pb.ReadResponse) error {
+	var options []runtime.ReadOption
 	if req.Options != nil {
-		options = toGetOptions(req.Options)
+		options = toReadOptions(req.Options)
 	}
 
-	services, err := r.Runtime.Get(req.Name, options...)
+	services, err := r.Runtime.Read(options...)
 	if err != nil {
 		return errors.InternalServerError("go.micro.runtime", err.Error())
 	}

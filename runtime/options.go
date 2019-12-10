@@ -10,16 +10,27 @@ type Option func(o *Options)
 type Options struct {
 	// Notifier for updates
 	Notifier Notifier
+	// Service type to manage
+	Type string
 }
 
-// AutoUpdate enables micro auto-updates
+// WithNotifier specifies a notifier for updates
 func WithNotifier(n Notifier) Option {
 	return func(o *Options) {
 		o.Notifier = n
 	}
 }
 
+// WithType sets the service type to manage
+func WithType(t string) Option {
+	return func(o *Options) {
+		o.Type = t
+	}
+}
+
 type CreateOption func(o *CreateOptions)
+
+type ReadOption func(o *ReadOptions)
 
 // CreateOptions configure runtime services
 type CreateOptions struct {
@@ -29,15 +40,25 @@ type CreateOptions struct {
 	Env []string
 	// Log output
 	Output io.Writer
+	// Type of service to create
+	Type string
+}
+
+// ReadOptions queries runtime services
+type ReadOptions struct {
+	// Service name
+	Service string
+	// Version queries services with given version
+	Version string
+	// Type of service
+	Type string
 }
 
 // WithCommand specifies the command to execute
-func WithCommand(c string, args ...string) CreateOption {
+func WithCommand(args ...string) CreateOption {
 	return func(o *CreateOptions) {
 		// set command
-		o.Command = []string{c}
-		// set args
-		o.Command = append(o.Command, args...)
+		o.Command = args
 	}
 }
 
@@ -55,17 +76,23 @@ func WithOutput(out io.Writer) CreateOption {
 	}
 }
 
-type GetOption func(o *GetOptions)
-
-// GetOptions queries runtime services
-type GetOptions struct {
-	// Version queries services with given version
-	Version string
+// ReadService returns services with the given name
+func ReadService(service string) ReadOption {
+	return func(o *ReadOptions) {
+		o.Service = service
+	}
 }
 
 // WithVersion confifgures service version
-func WithVersion(version string) GetOption {
-	return func(o *GetOptions) {
+func ReadVersion(version string) ReadOption {
+	return func(o *ReadOptions) {
 		o.Version = version
+	}
+}
+
+// ReadType returns services of the given type
+func ReadType(t string) ReadOption {
+	return func(o *ReadOptions) {
+		o.Type = t
 	}
 }

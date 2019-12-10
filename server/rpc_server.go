@@ -14,6 +14,7 @@ import (
 
 	"github.com/micro/go-micro/broker"
 	"github.com/micro/go-micro/codec"
+	raw "github.com/micro/go-micro/codec/bytes"
 	"github.com/micro/go-micro/metadata"
 	"github.com/micro/go-micro/registry"
 	"github.com/micro/go-micro/transport"
@@ -31,11 +32,13 @@ type rpcServer struct {
 	opts Options
 	// 服务名到服务handler的映射
 	handlers    map[string]Handler
-	subscribers map[*subscriber][]broker.Subscriber
+	subscribers map[Subscriber][]broker.Subscriber
 	// marks the serve as started
 	started bool
 	// used for first registration
 	registered bool
+	// subscribe to service name
+	subscriber broker.Subscriber
 	// graceful exit
 	wg *sync.WaitGroup
 }
@@ -44,46 +47,115 @@ func newRpcServer(opts ...Option) Server {
 	options := newOptions(opts...)
 	router := newRpcRouter()
 	router.hdlrWrappers = options.HdlrWrappers
+	router.subWrappers = options.SubWrappers
 
 	return &rpcServer{
 		opts:        options,
 		router:      router,
 		handlers:    make(map[string]Handler),
-		subscribers: make(map[*subscriber][]broker.Subscriber),
+		subscribers: make(map[Subscriber][]broker.Subscriber),
 		exit:        make(chan chan error),
 		wg:          wait(options.Context),
 	}
 }
 
-type rpcRouter struct {
-	h func(context.Context, Request, interface{}) error
-}
+// HandleEvent handles inbound messages to the service directly
+// TODO: handle requests from an event. We won't send a response.
+func (s *rpcServer) HandleEvent(e broker.Event) error {
+	// formatting horrible cruft
+	msg := e.Message()
 
-func (r rpcRouter) ServeRequest(ctx context.Context, req Request, rsp Response) error {
-	return r.h(ctx, req, rsp)
+	if msg.Header == nil {
+		// create empty map in case of headers empty to avoid panic later
+		msg.Header = make(map[string]string)
+	}
+
+	// get codec
+	ct := msg.Header["Content-Type"]
+
+	// default content type
+	if len(ct) == 0 {
+		msg.Header["Content-Type"] = DefaultContentType
+		ct = DefaultContentType
+	}
+
+	// get codec
+	cf, err := s.newCodec(ct)
+	if err != nil {
+		return err
+	}
+
+	// copy headers
+	hdr := make(map[string]string)
+	for k, v := range msg.Header {
+		hdr[k] = v
+	}
+
+	// create context
+	ctx := metadata.NewContext(context.Background(), hdr)
+
+	// TODO: inspect message header
+	// Micro-Service means a request
+	// Micro-Topic means a message
+
+	rpcMsg := &rpcMessage{
+		topic:       msg.Header["Micro-Topic"],
+		contentType: ct,
+		payload:     &raw.Frame{Data: msg.Body},
+		codec:       cf,
+		header:      msg.Header,
+		body:        msg.Body,
+	}
+
+	// existing router
+	r := Router(s.router)
+
+	// if the router is present then execute it
+	if s.opts.Router != nil {
+		// create a wrapped function
+		handler := s.opts.Router.ProcessMessage
+
+		// execute the wrapper for it
+		for i := len(s.opts.SubWrappers); i > 0; i-- {
+			handler = s.opts.SubWrappers[i-1](handler)
+		}
+
+		// set the router
+		r = rpcRouter{m: handler}
+	}
+
+	return r.ProcessMessage(ctx, rpcMsg)
 }
 
 // ServeConn serves a single connection
 func (s *rpcServer) ServeConn(sock transport.Socket) {
-	var wg sync.WaitGroup
-	var mtx sync.RWMutex
+	// global error tracking
+	var gerr error
 	// streams are multiplexed on Micro-Stream or Micro-Id header
-	sockets := make(map[string]*socket.Socket)
+	pool := socket.NewPool()
+
+	// get global waitgroup
+	s.Lock()
+	gg := s.wg
+	s.Unlock()
+
+	// waitgroup to wait for processing to finish
+	wg := &waitGroup{
+		gg: gg,
+	}
 
 	defer func() {
-		// wait till done
-		wg.Wait()
+		// only wait if there's no error
+		if gerr == nil {
+			// wait till done
+			wg.Wait()
+		}
+
+		// close all the sockets for this connection
+		pool.Close()
 
 		// close underlying socket
 		sock.Close()
-
-		// close the sockets
-		mtx.Lock()
-		for id, psock := range sockets {
-			psock.Close()
-			delete(sockets, id)
-		}
-		mtx.Unlock()
 
 		// recover any panics
 		if r := recover(); r != nil {
@@ -94,9 +166,37 @@ func (s *rpcServer) ServeConn(sock transport.Socket) {
 
 	for {
 		var msg transport.Message
+		// process inbound messages one at a time
 		if err := sock.Recv(&msg); err != nil {
+			// set a global error and return
+			// we're saying we essentially can't
+			// use the socket anymore
+			gerr = err
 			return
 		}
+
+		// check the message header for
+		// Micro-Service is a request
+		// Micro-Topic is a message
+		if t := msg.Header["Micro-Topic"]; len(t) > 0 {
+			// process the event
+			ev := newEvent(msg)
+			// TODO: handle the error event
+			if err := s.HandleEvent(ev); err != nil {
+				msg.Header["Micro-Error"] = err.Error()
+			}
+			// write back some 200
+			if err := sock.Send(&transport.Message{
+				Header: msg.Header,
+			}); err != nil {
+				gerr = err
+				break
+			}
+			// we're done
+			continue
+		}
+
+		// business as usual
 
 		// use Micro-Stream as the stream identifier
 		// in the event its blank we'll always process
@@ -109,56 +209,51 @@ func (s *rpcServer) ServeConn(sock transport.Socket) {
 			id = msg.Header["Micro-Id"]
 		}
 
-		// we're starting processing
-		wg.Add(1)
+		// check stream id
+		var stream bool
 
-		// add to wait group if "wait" is opt-in
-		s.Lock()
-		swg := s.wg
-		s.Unlock()
-
-		if swg != nil {
-			swg.Add(1)
+		if v := getHeader("Micro-Stream", msg.Header); len(v) > 0 {
+			stream = true
 		}
 
-		// check we have an existing socket
-		mtx.RLock()
-		psock, ok := sockets[id]
-		mtx.RUnlock()
+		// check if we have an existing socket
+		psock, ok := pool.Get(id)
 
-		// got the socket
+		// if we don't have a socket and its a stream
+		if !ok && stream {
+			// check if its a last stream EOS error
+			err := msg.Header["Micro-Error"]
+			if err == lastStreamResponseError.Error() {
+				pool.Release(psock)
+				continue
+			}
+		}
+
+		// got an existing socket already
 		if ok {
-			// accept the message
+			// we're starting processing
+			wg.Add(1)
+
+			// pass the message to that existing socket
 			if err := psock.Accept(&msg); err != nil {
-				// delete the socket
-				mtx.Lock()
-				delete(sockets, id)
-				mtx.Unlock()
+				// release the socket if there's an error
+				pool.Release(psock)
 			}
 
-			// done(1)
-			if swg != nil {
-				swg.Done()
-			}
-
+			// done waiting
 			wg.Done()
 
 			// continue to the next message
 			continue
 		}
 
-		// no socket was found
-		psock = socket.New()
+		// no socket was found so its new
+		// set the local and remote values
 		psock.SetLocal(sock.Local())
 		psock.SetRemote(sock.Remote())
 
-		// load the socket
+		// load the socket with the current message
 		psock.Accept(&msg)
-
-		// save a new socket
-		mtx.Lock()
-		sockets[id] = psock
-		mtx.Unlock()
 
 		// now walk the usual path
 
@@ -183,7 +278,9 @@ func (s *rpcServer) ServeConn(sock transport.Socket) {
 		// set the timeout from the header if we have it
 		if len(to) > 0 {
 			if n, err := strconv.ParseUint(to, 10, 64); err == nil {
-				ctx, _ = context.WithTimeout(ctx, time.Duration(n))
+				var cancel context.CancelFunc
+				ctx, cancel = context.WithTimeout(ctx, time.Duration(n))
+				defer cancel()
 			}
 		}
 
@@ -196,37 +293,32 @@ func (s *rpcServer) ServeConn(sock transport.Socket) {
 		// setup old protocol
 		cf := setupProtocol(&msg)
 
-		// no old codec
+		// no legacy codec needed
 		if cf == nil {
-			// TODO: needs better error handling
 			var err error
+			// try get a new codec
 			if cf, err = s.newCodec(ct); err != nil {
-				sock.Send(&transport.Message{
+				// no codec found so send back an error
+				if err := sock.Send(&transport.Message{
 					Header: map[string]string{
 						"Content-Type": "text/plain",
 					},
 					Body: []byte(err.Error()),
-				})
-
-				if swg != nil {
-					swg.Done()
+				}); err != nil {
+					gerr = err
 				}
 
-				wg.Done()
-
-				return
+				// release the socket we just created
+				pool.Release(psock)
+				// now continue
+				continue
 			}
 		}
 
+		// create a new rpc codec based on the pseudo socket and codec
 		rcodec := newRpcCodec(&msg, psock, cf)
+		// check the protocol as well
 		protocol := rcodec.String()
-
-		// check stream id
-		var stream bool
-
-		if v := getHeader("Micro-Stream", msg.Header); len(v) > 0 {
-			stream = true
-		}
 
 		// internal request
 		request := &rpcRequest{
@@ -264,14 +356,14 @@ func (s *rpcServer) ServeConn(sock transport.Socket) {
 			}
 
 			// set the router
-			r = rpcRouter{handler}
+			r = rpcRouter{h: handler}
 		}
-
-		// wait for processing to exit
-		wg.Add(1)
 
 		// process the outbound messages from the socket
 		go func(id string, psock *socket.Socket) {
+			// wait for processing to exit
+			wg.Add(1)
+
 			defer func() {
 				// TODO: don't hack this but if its grpc just break out of the stream
 				// We do this because the underlying connection is h2 and its a stream
@@ -279,7 +371,9 @@ func (s *rpcServer) ServeConn(sock transport.Socket) {
 				case "grpc":
 					sock.Close()
 				}
-
+				// release the socket
+				pool.Release(psock)
+				// signal we're done
 				wg.Done()
 			}()
 
@@ -287,10 +381,6 @@ func (s *rpcServer) ServeConn(sock transport.Socket) {
 				// get the message from our internal handler/stream
 				m := new(transport.Message)
 				if err := psock.Process(m); err != nil {
-					// delete the socket
-					mtx.Lock()
-					delete(sockets, id)
-					mtx.Unlock()
 					return
 				}
 
@@ -303,7 +393,15 @@ func (s *rpcServer) ServeConn(sock transport.Socket) {
 
 		// serve the request in a go routine as this may be a stream
 		go func(id string, psock *socket.Socket) {
-			defer psock.Close()
+			// add to the waitgroup
+			wg.Add(1)
+
+			defer func() {
+				// release the socket
+				pool.Release(psock)
+				// signal we're done
+				wg.Done()
+			}()
 
 			// serve the actual request using the request router
 			if serveRequestError := r.ServeRequest(ctx, request, response); serveRequestError != nil {
@@ -320,21 +418,9 @@ func (s *rpcServer) ServeConn(sock transport.Socket) {
 
 				// could not write error response
 				if writeError != nil && !alreadyClosed {
-					log.Logf("rpc: unable to write error response: %v", writeError)
+					log.Debugf("rpc: unable to write error response: %v", writeError)
 				}
 			}
-
-			mtx.Lock()
-			delete(sockets, id)
-			mtx.Unlock()
-
-			// signal we're done
-			if swg != nil {
-				swg.Done()
-			}
-
-			// done with this socket
-			wg.Done()
 		}(id, psock)
 	}
 }
@@ -367,6 +453,7 @@ func (s *rpcServer) Init(opts ...Option) error {
 		r := newRpcRouter()
 		r.hdlrWrappers = s.opts.HdlrWrappers
 		r.serviceMap = s.router.serviceMap
+		r.subWrappers = s.opts.SubWrappers
 		s.router = r
 	}
 
@@ -392,29 +479,18 @@ func (s *rpcServer) Handle(h Handler) error {
 }
 
 func (s *rpcServer) NewSubscriber(topic string, sb interface{}, opts ...SubscriberOption) Subscriber {
-	return newSubscriber(topic, sb, opts...)
+	return s.router.NewSubscriber(topic, sb, opts...)
 }
 
 func (s *rpcServer) Subscribe(sb Subscriber) error {
-	sub, ok := sb.(*subscriber)
-	if !ok {
-		return fmt.Errorf("invalid subscriber: expected *subscriber")
-	}
-	if len(sub.handlers) == 0 {
-		return fmt.Errorf("invalid subscriber: no handler functions")
-	}
+	s.Lock()
+	defer s.Unlock()
 
-	if err := validateSubscriber(sb); err != nil {
+	if err := s.router.Subscribe(sb); err != nil {
 		return err
 	}
 
-	s.Lock()
-	defer s.Unlock()
-	_, ok = s.subscribers[sub]
-	if ok {
-		return fmt.Errorf("subscriber %v already exists", s)
-	}
-	s.subscribers[sub] = nil
+	s.subscribers[sb] = nil
 	return nil
 }
 
@@ -476,6 +552,7 @@ func (s *rpcServer) Register() error {
 	node.Metadata["protocol"] = "mucp"
 
 	s.RLock()
+
 	// Maps are ordered randomly, sort the keys for consistency
 	var handlerList []string
 	for n, e := range s.handlers {
@@ -484,27 +561,30 @@ func (s *rpcServer) Register() error {
 			handlerList = append(handlerList, n)
 		}
 	}
+
 	sort.Strings(handlerList)
 
-	var subscriberList []*subscriber
+	var subscriberList []Subscriber
 	for e := range s.subscribers {
 		// Only advertise non internal subscribers
 		if !e.Options().Internal {
 			subscriberList = append(subscriberList, e)
 		}
 	}
+
 	sort.Slice(subscriberList, func(i, j int) bool {
-		return subscriberList[i].topic > subscriberList[j].topic
+		return subscriberList[i].Topic() > subscriberList[j].Topic()
 	})
 
 	endpoints := make([]*registry.Endpoint, 0, len(handlerList)+len(subscriberList))
+
 	for _, n := range handlerList {
 		endpoints = append(endpoints, s.handlers[n].Endpoints()...)
 	}
+
 	for _, e := range subscriberList {
 		endpoints = append(endpoints, e.Endpoints()...)
 	}
-	s.RUnlock()
 
 	service := &registry.Service{
 		Name:      config.Name,
@@ -513,9 +593,10 @@ func (s *rpcServer) Register() error {
 		Endpoints: endpoints,
 	}
 
-	s.Lock()
+	// get registered value
 	registered := s.registered
-	s.Unlock()
+
+	s.RUnlock()
 
 	if !registered {
 		log.Logf("Registry [%s] Registering node: %s", config.Registry.String(), node.Id)
@@ -537,9 +618,20 @@ func (s *rpcServer) Register() error {
 	defer s.Unlock()
 
 	s.registered = true
+	// set what we're advertising
+	s.opts.Advertise = addr
 
+	// subscribe to the topic with own name
+	sub, err := s.opts.Broker.Subscribe(config.Name, s.HandleEvent)
+	if err != nil {
+		return err
+	}
+
+	// save the subscriber
+	s.subscriber = sub
+
+	// subscribe for all of the subscribers
 	for sb := range s.subscribers {
-		handler := s.createSubHandler(sb, s.opts)
 		var opts []broker.SubscribeOption
 		if queue := sb.Options().Queue; len(queue) > 0 {
 			opts = append(opts, broker.Queue(queue))
@@ -553,10 +645,11 @@ func (s *rpcServer) Register() error {
 			opts = append(opts, broker.DisableAutoAck())
 		}
 
-		sub, err := config.Broker.Subscribe(sb.Topic(), handler, opts...)
+		sub, err := config.Broker.Subscribe(sb.Topic(), s.HandleEvent, opts...)
 		if err != nil {
 			return err
 		}
+
 		log.Logf("Subscribing %s to topic: %s", node.Id, sub.Topic())
 		s.subscribers[sb] = []broker.Subscriber{sub}
 	}
@@ -623,6 +716,12 @@ func (s *rpcServer) Deregister() error {
 	}
 
 	s.registered = false
+
+	// close the subscriber
+	if s.subscriber != nil {
+		s.subscriber.Unsubscribe()
+		s.subscriber = nil
+	}
 
 	for sb, subs := range s.subscribers {
 		for _, sub := range subs {
@@ -794,13 +893,10 @@ func (s *rpcServer) Stop() error {
 	ch := make(chan error)
 	s.exit <- ch
 
-	var err error
-	select {
-	case err = <-ch:
-		s.Lock()
-		s.started = false
-		s.Unlock()
-	}
+	err := <-ch
+	s.Lock()
+	s.started = false
+	s.Unlock()
 
 	return err
 }

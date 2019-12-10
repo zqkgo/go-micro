@@ -137,6 +137,10 @@ func newOptions(options ...Option) Options {
 		opts.Transport = transport.DefaultTransport
 	}
 
+	if opts.Context == nil {
+		opts.Context = context.Background()
+	}
+
 	return opts
 }
 

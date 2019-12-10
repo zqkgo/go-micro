@@ -7,7 +7,7 @@ import (
 	"time"
 
 	"github.com/micro/go-micro/client"
-	pb "github.com/micro/go-micro/debug/proto"
+	pb "github.com/micro/go-micro/debug/service/proto"
 	"github.com/micro/go-micro/registry"
 	"github.com/micro/go-micro/registry/cache"
 )
@@ -307,8 +307,6 @@ func (m *monitor) Stop() error {
 		m.running = false
 		return nil
 	}
-
-	return nil
 }
 
 func newMonitor(opts ...Option) Monitor {

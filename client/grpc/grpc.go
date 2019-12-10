@@ -13,6 +13,7 @@ import (
 	"github.com/micro/go-micro/client"
 	"github.com/micro/go-micro/client/selector"
 	"github.com/micro/go-micro/codec"
+	raw "github.com/micro/go-micro/codec/bytes"
 	"github.com/micro/go-micro/errors"
 	"github.com/micro/go-micro/metadata"
 	"github.com/micro/go-micro/registry"
@@ -295,16 +296,6 @@ func (g *grpcClient) newGRPCCodec(contentType string) (encoding.Codec, error) {
 	return nil, fmt.Errorf("Unsupported Content-Type: %s", contentType)
 }
 
-func (g *grpcClient) newCodec(contentType string) (codec.NewCodec, error) {
-	if c, ok := g.opts.Codecs[contentType]; ok {
-		return c, nil
-	}
-	if cf, ok := defaultRPCCodecs[contentType]; ok {
-		return cf, nil
-	}
-	return nil, fmt.Errorf("Unsupported Content-Type: %s", contentType)
-}
-
 func (g *grpcClient) Init(opts ...client.Option) error {
 	size := g.opts.PoolSize
 	ttl := g.opts.PoolTTL
@@ -356,7 +347,9 @@ func (g *grpcClient) Call(ctx context.Context, req client.Request, rsp interface
 	d, ok := ctx.Deadline()
 	if !ok {
 		// no deadline so we create a new one
-		ctx, _ = context.WithTimeout(ctx, callOpts.RequestTimeout)
+		var cancel context.CancelFunc
+		ctx, cancel = context.WithTimeout(ctx, callOpts.RequestTimeout)
+		defer cancel()
 	} else {
 		// got a deadline so no need to setup context
 		// but we need to set the timeout we pass along
@@ -537,33 +530,58 @@ func (g *grpcClient) Stream(ctx context.Context, req client.Request, opts ...cli
 
 func (g *grpcClient) Publish(ctx context.Context, p client.Message, opts ...client.PublishOption) error {
 	// 从context中获取元信息
+	var options client.PublishOptions
+	for _, o := range opts {
+		o(&options)
+	}
+
 	md, ok := metadata.FromContext(ctx)
 	if !ok {
 		md = make(map[string]string)
 	}
 	md["Content-Type"] = p.ContentType()
-	
 	// 获取编解码对象
+	md["Micro-Topic"] = p.Topic()
 	cf, err := g.newGRPCCodec(p.ContentType())
 	if err != nil {
 		return errors.InternalServerError("go.micro.client", err.Error())
 	}
-	
-	// 编码自定义消息数据对象
-	b, err := cf.Marshal(p.Payload())
-	if err != nil {
-		return errors.InternalServerError("go.micro.client", err.Error())
+	var body []byte
+
+	// passed in raw data
+	if d, ok := p.Payload().(*raw.Frame); ok {
+		body = d.Data
+	} else {
+		// set the body
+		// 编码自定义消息数据对象
+		b, err := cf.Marshal(p.Payload())
+		if err != nil {
+			return errors.InternalServerError("go.micro.client", err.Error())
+		}
+		body = b
 	}
-	
+
 	// 连接到broker，只有第一次调用的时候执行
 	// TODO：这个时候还会启动broker server， why？
 	g.once.Do(func() {
 		g.opts.Broker.Connect()
 	})
 
-	return g.opts.Broker.Publish(p.Topic(), &broker.Message{
+	topic := p.Topic()
+
+	// get proxy topic
+	if prx := os.Getenv("MICRO_PROXY"); len(prx) > 0 {
+		options.Exchange = prx
+	}
+
+	// get the exchange
+	if len(options.Exchange) > 0 {
+		topic = options.Exchange
+	}
+
+	return g.opts.Broker.Publish(topic, &broker.Message{
 		Header: md,
-		Body:   b,
+		Body:   body,
 	})
 }
 

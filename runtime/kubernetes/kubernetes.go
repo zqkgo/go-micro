@@ -2,10 +2,7 @@
 package kubernetes
 
 import (
-	"errors"
 	"fmt"
-	"strconv"
-	"strings"
 	"sync"
 	"time"
 
@@ -43,193 +40,114 @@ type kubernetes struct {
 	client client.Kubernetes
 }
 
-// NewRuntime creates new kubernetes runtime
-func NewRuntime(opts ...runtime.Option) runtime.Runtime {
-	// get default options
-	options := runtime.Options{}
-
-	// apply requested options
-	for _, o := range opts {
-		o(&options)
-	}
-
-	// kubernetes client
-	client := client.NewClientInCluster()
-
-	return &kubernetes{
-		options: options,
-		closed:  make(chan bool),
-		queue:   make(chan *task, 128),
-		client:  client,
-	}
-}
-
-// Init initializes runtime options
-func (k *kubernetes) Init(opts ...runtime.Option) error {
-	k.Lock()
-	defer k.Unlock()
-
-	for _, o := range opts {
-		o(&k.options)
-	}
-
-	return nil
-}
-
-// Creates a service
-func (k *kubernetes) Create(s *runtime.Service, opts ...runtime.CreateOption) error {
-	k.Lock()
-	defer k.Unlock()
-
-	var options runtime.CreateOptions
-	for _, o := range opts {
-		o(&options)
-	}
-
-	svcName := s.Name
-	if len(s.Version) > 0 {
-		svcName = strings.Join([]string{s.Name, s.Version}, "-")
-	}
-
-	if !client.ServiceRegexp.MatchString(svcName) {
-		return fmt.Errorf("invalid service name: %s", svcName)
-	}
-
-	// create new kubernetes micro service
-	service := newService(s, options)
-
-	log.Debugf("Runtime queueing service %s for start action", service.Name)
-
-	// push into start queue
-	k.queue <- &task{
-		action:  start,
-		service: service,
-	}
-
-	return nil
-}
-
-// Get returns all instances of given service
-func (k *kubernetes) Get(name string, opts ...runtime.GetOption) ([]*runtime.Service, error) {
-	k.Lock()
-	defer k.Unlock()
-
-	// if no name has been passed in, return error
-	if len(name) == 0 {
-		return nil, errors.New("missing service name")
-	}
-
-	// set the default label
-	labels := map[string]string{
-		"micro": "service",
-		"name":  name,
-	}
-	var options runtime.GetOptions
-	for _, o := range opts {
-		o(&options)
-	}
-
-	// add version to labels if a version has been supplied
-	if len(options.Version) > 0 {
-		labels["version"] = options.Version
-	}
-
-	log.Debugf("Runtime querying service %s", name)
-
+// getService queries kubernetes for micro service
+// NOTE: this function is not thread-safe
+func (k *kubernetes) getService(labels map[string]string) ([]*runtime.Service, error) {
+	// get the service status
 	serviceList := new(client.ServiceList)
 	r := &client.Resource{
 		Kind:  "service",
 		Value: serviceList,
 	}
+
+	// get the service from k8s
 	if err := k.client.Get(r, labels); err != nil {
 		return nil, err
 	}
 
-	services := make([]*runtime.Service, 0, len(serviceList.Items))
-	for _, kservice := range serviceList.Items {
-		service := &runtime.Service{
-			Name:    kservice.Metadata.Name,
-			Version: kservice.Metadata.Version,
-		}
-		services = append(services, service)
+	// get the deployment status
+	depList := new(client.DeploymentList)
+	d := &client.Resource{
+		Kind:  "deployment",
+		Value: depList,
 	}
 
-	return services, nil
-}
-
-// Update the service in place
-func (k *kubernetes) Update(s *runtime.Service) error {
-	// parse version into human readable timestamp
-	updateTimeStamp, err := strconv.ParseInt(s.Version, 10, 64)
-	if err != nil {
-		return err
-	}
-	unixTimeUTC := time.Unix(updateTimeStamp, 0)
-
-	// create new kubernetes micro service
-	service := newService(s, runtime.CreateOptions{})
-
-	// update build time annotation
-	service.kdeploy.Spec.Template.Metadata.Annotations["build"] = unixTimeUTC.Format(time.RFC3339)
-
-	log.Debugf("Runtime queueing service %s for update action", service.Name)
-
-	// queue service for removal
-	k.queue <- &task{
-		action:  update,
-		service: service,
-	}
-
-	return nil
-}
-
-// Remove a service
-func (k *kubernetes) Delete(s *runtime.Service) error {
-	k.Lock()
-	defer k.Unlock()
-
-	// create new kubernetes micro service
-	service := newService(s, runtime.CreateOptions{})
-
-	log.Debugf("Runtime queueing service %s for delete action", service.Name)
-
-	// queue service for removal
-	k.queue <- &task{
-		action:  stop,
-		service: service,
-	}
-
-	return nil
-}
-
-// List the managed services
-func (k *kubernetes) List() ([]*runtime.Service, error) {
-	serviceList := new(client.ServiceList)
-	r := &client.Resource{
-		Kind:  "service",
-		Value: serviceList,
-	}
-
-	if err := k.client.List(r); err != nil {
+	// get the deployment from k8s
+	if err := k.client.Get(d, labels); err != nil {
 		return nil, err
 	}
 
-	log.Debugf("Runtime found %d micro services", len(serviceList.Items))
+	// service map
+	svcMap := make(map[string]*runtime.Service)
 
+	// collect info from kubernetes service
+	for _, kservice := range serviceList.Items {
+		// name of the service
+		name := kservice.Metadata.Labels["name"]
+		// version of the service
+		version := kservice.Metadata.Labels["version"]
+
+		// save as service
+		svcMap[name+version] = &runtime.Service{
+			Name:     name,
+			Version:  version,
+			Metadata: make(map[string]string),
+		}
+
+		// copy annotations metadata into service metadata
+		for k, v := range kservice.Metadata.Annotations {
+			svcMap[name+version].Metadata[k] = v
+		}
+	}
+
+	// collect additional info from kubernetes deployment
+	for _, kdep := range depList.Items {
+		// name of the service
+		name := kdep.Metadata.Labels["name"]
+		// versio of the service
+		version := kdep.Metadata.Labels["version"]
+
+		// access existing service map based on name + version
+		if svc, ok := svcMap[name+version]; ok {
+			// we're expecting our own service name in metadata
+			if _, ok := kdep.Metadata.Annotations["name"]; !ok {
+				continue
+			}
+
+			// set the service name, version and source
+			// based on existing annotations we stored
+			svc.Name = kdep.Metadata.Annotations["name"]
+			svc.Version = kdep.Metadata.Annotations["version"]
+			svc.Source = kdep.Metadata.Annotations["source"]
+
+			// delete from metadata
+			delete(kdep.Metadata.Annotations, "name")
+			delete(kdep.Metadata.Annotations, "version")
+			delete(kdep.Metadata.Annotations, "source")
+
+			// copy all annotations metadata into service metadata
+			for k, v := range kdep.Metadata.Annotations {
+				svc.Metadata[k] = v
+			}
+
+			// parse out deployment status and inject into service metadata
+			if len(kdep.Status.Conditions) > 0 {
+				status := kdep.Status.Conditions[0].Type
+				// pick the last known condition type and mark the service status with it
+				log.Debugf("Runtime setting %s service deployment status: %v", name, status)
+				svc.Metadata["status"] = status
+			}
+
+			// parse out deployment build
+			if build, ok := kdep.Spec.Template.Metadata.Annotations["build"]; ok {
+				buildTime, err := time.Parse(time.RFC3339, build)
+				if err != nil {
+					log.Debugf("Runtime failed parsing build time for %s: %v", name, err)
+					continue
+				}
+				svc.Metadata["build"] = fmt.Sprintf("%d", buildTime.Unix())
+				continue
+			}
+			// if no build annotation is found, set it to current time
+			svc.Metadata["build"] = fmt.Sprintf("%d", time.Now().Unix())
+		}
+	}
+
+	// collect all the services and return
 	services := make([]*runtime.Service, 0, len(serviceList.Items))
 
-	for _, service := range serviceList.Items {
-		buildTime, err := time.Parse(time.RFC3339, service.Metadata.Annotations["build"])
-		if err != nil {
-			log.Debugf("Runtime error parsing build time for %s: %v", service.Metadata.Name, err)
-			continue
-		}
-		// add the service to the list of services
-		svc := &runtime.Service{
-			Name:    service.Metadata.Name,
-			Version: fmt.Sprintf("%d", buildTime.Unix()),
-		}
-		services = append(services, svc)
+	for _, service := range svcMap {
+		services = append(services, service)
 	}
 
 	return services, nil
@@ -246,6 +164,7 @@ func (k *kubernetes) run(events <-chan runtime.Event) {
 			// TODO: figure out what to do here
 			// - do we even need the ticker for k8s services?
 		case task := <-k.queue:
+			// The task queue is used to take actions e.g (CRUD - R)
 			switch task.action {
 			case start:
 				log.Debugf("Runtime starting new service: %s", task.service.Name)
@@ -273,26 +192,66 @@ func (k *kubernetes) run(events <-chan runtime.Event) {
 			log.Debugf("Runtime received notification event: %v", event)
 			switch event.Type {
 			case runtime.Update:
-				// parse returned response to timestamp
-				updateTimeStamp, err := strconv.ParseInt(event.Version, 10, 64)
-				if err != nil {
-					log.Debugf("Runtime error parsing update build time: %v", err)
+				// only process if there's an actual service
+				// we do not update all the things individually
+				if len(event.Service) == 0 {
 					continue
 				}
-				unixTimeUTC := time.Unix(updateTimeStamp, 0)
-				if len(event.Service) > 0 {
-					s := &runtime.Service{
-						Name:    event.Service,
-						Version: event.Version,
-					}
-					// create new kubernetes micro service
-					service := newService(s, runtime.CreateOptions{})
-					// update build time annotation
-					service.kdeploy.Spec.Template.Metadata.Annotations["build"] = unixTimeUTC.Format(time.RFC3339)
 
-					log.Debugf("Runtime updating service: %s", service.Name)
-					if err := service.Update(k.client); err != nil {
-						log.Debugf("Runtime failed to update service %s: %v", service.Name, err)
+				// format the name
+				name := client.Format(event.Service)
+
+				// set the default labels
+				labels := map[string]string{
+					"micro": k.options.Type,
+					"name":  name,
+				}
+
+				if len(event.Version) > 0 {
+					labels["version"] = event.Version
+				}
+
+				// get the deployment status
+				deployed := new(client.DeploymentList)
+
+				// get the existing service rather than creating a new one
+				err := k.client.Get(&client.Resource{
+					Kind:  "deployment",
+					Value: deployed,
+				}, labels)
+
+				if err != nil {
+					log.Debugf("Runtime update failed to get service %s: %v", event.Service, err)
+					continue
+				}
+
+				// technically we should not receive multiple versions but hey ho
+				for _, service := range deployed.Items {
+					// check the name matches
+					if service.Metadata.Name != name {
+						continue
+					}
+
+					// update build time annotation
+					if service.Spec.Template.Metadata.Annotations == nil {
+						service.Spec.Template.Metadata.Annotations = make(map[string]string)
+
+					}
+
+					// check the existing build timestamp
+					if build, ok := service.Spec.Template.Metadata.Annotations["build"]; ok {
+						buildTime, err := time.Parse(time.RFC3339, build)
+						if err == nil && !event.Timestamp.After(buildTime) {
+							continue
+						}
+					}
+
+					// update the build time
+					service.Spec.Template.Metadata.Annotations["build"] = event.Timestamp.Format(time.RFC3339)
+
+					log.Debugf("Runtime updating service: %s deployment: %s", event.Service, service.Metadata.Name)
+					if err := k.client.Update(deploymentResource(&service)); err != nil {
+						log.Debugf("Runtime failed to update service %s: %v", event.Service, err)
 						continue
 					}
 				}
@@ -304,7 +263,141 @@ func (k *kubernetes) run(events <-chan runtime.Event) {
 	}
 }
 
-// starts the runtime
+// Init initializes runtime options
+func (k *kubernetes) Init(opts ...runtime.Option) error {
+	k.Lock()
+	defer k.Unlock()
+
+	for _, o := range opts {
+		o(&k.options)
+	}
+
+	return nil
+}
+
+// Creates a service
+func (k *kubernetes) Create(s *runtime.Service, opts ...runtime.CreateOption) error {
+	k.Lock()
+	defer k.Unlock()
+
+	options := runtime.CreateOptions{
+		Type: k.options.Type,
+	}
+	for _, o := range opts {
+		o(&options)
+	}
+
+	// quickly prevalidate the name and version
+	name := s.Name
+	if len(s.Version) > 0 {
+		name = name + "-" + s.Version
+	}
+
+	// format as we'll format in the deployment
+	name = client.Format(name)
+
+	// create new kubernetes micro service
+	service := newService(s, options)
+
+	log.Debugf("Runtime queueing service %s version %s for start action", service.Name, service.Version)
+
+	// push into start queue
+	k.queue <- &task{
+		action:  start,
+		service: service,
+	}
+
+	return nil
+}
+
+// Read returns all instances of given service
+func (k *kubernetes) Read(opts ...runtime.ReadOption) ([]*runtime.Service, error) {
+	k.Lock()
+	defer k.Unlock()
+
+	// set the default labels
+	labels := map[string]string{
+		"micro": k.options.Type,
+	}
+
+	var options runtime.ReadOptions
+	for _, o := range opts {
+		o(&options)
+	}
+
+	if len(options.Service) > 0 {
+		labels["name"] = client.Format(options.Service)
+	}
+
+	// add version to labels if a version has been supplied
+	if len(options.Version) > 0 {
+		labels["version"] = options.Version
+	}
+
+	if len(options.Type) > 0 {
+		labels["micro"] = options.Type
+	}
+
+	return k.getService(labels)
+}
+
+// List the managed services
+func (k *kubernetes) List() ([]*runtime.Service, error) {
+	k.Lock()
+	defer k.Unlock()
+
+	labels := map[string]string{
+		"micro": k.options.Type,
+	}
+
+	log.Debugf("Runtime listing all micro services")
+
+	return k.getService(labels)
+}
+
+// Update the service in place
+func (k *kubernetes) Update(s *runtime.Service) error {
+	// create new kubernetes micro service
+	service := newService(s, runtime.CreateOptions{
+		Type: k.options.Type,
+	})
+
+	// update build time annotation
+	service.kdeploy.Spec.Template.Metadata.Annotations["build"] = time.Now().Format(time.RFC3339)
+
+	log.Debugf("Runtime queueing service %s for update action", service.Name)
+
+	// queue service for removal
+	k.queue <- &task{
+		action:  update,
+		service: service,
+	}
+
+	return nil
+}
+
+// Delete removes a service
+func (k *kubernetes) Delete(s *runtime.Service) error {
+	k.Lock()
+	defer k.Unlock()
+
+	// create new kubernetes micro service
+	service := newService(s, runtime.CreateOptions{
+		Type: k.options.Type,
+	})
+
+	log.Debugf("Runtime queueing service %s for delete action", service.Name)
+
+	// queue service for removal
+	k.queue <- &task{
+		action:  stop,
+		service: service,
+	}
+
+	return nil
+}
+
+// Start starts the runtime
 func (k *kubernetes) Start() error {
 	k.Lock()
 	defer k.Unlock()
@@ -333,7 +426,7 @@ func (k *kubernetes) Start() error {
 	return nil
 }
 
-// Shutdown the runtime
+// Stop shuts down the runtime
 func (k *kubernetes) Stop() error {
 	k.Lock()
 	defer k.Unlock()
@@ -361,4 +454,28 @@ func (k *kubernetes) Stop() error {
 // String implements stringer interface
 func (k *kubernetes) String() string {
 	return "kubernetes"
+}
+
+// NewRuntime creates new kubernetes runtime
+func NewRuntime(opts ...runtime.Option) runtime.Runtime {
+	// get default options
+	options := runtime.Options{
+		// Create labels with type "micro": "service"
+		Type: "service",
+	}
+
+	// apply requested options
+	for _, o := range opts {
+		o(&options)
+	}
+
+	// kubernetes client
+	client := client.NewClientInCluster()
+
+	return &kubernetes{
+		options: options,
+		closed:  make(chan bool),
+		queue:   make(chan *task, 128),
+		client:  client,
+	}
 }

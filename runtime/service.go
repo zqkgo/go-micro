@@ -2,10 +2,11 @@ package runtime
 
 import (
 	"io"
-	"strings"
 	"sync"
+	"time"
 
-	packager "github.com/micro/go-micro/runtime/package"
+	"github.com/micro/go-micro/runtime/build"
+
 	"github.com/micro/go-micro/runtime/process"
 	proc "github.com/micro/go-micro/runtime/process/os"
 	"github.com/micro/go-micro/util/log"
@@ -17,6 +18,7 @@ type service struct {
 	running bool
 	closed  chan bool
 	err     error
+	updated time.Time
 
 	// output for logs
 	output io.Writer
@@ -35,36 +37,27 @@ func newService(s *Service, c CreateOptions) *service {
 	var exec string
 	var args []string
 
-	if len(s.Exec) > 0 {
-		parts := strings.Split(s.Exec, " ")
-		exec = parts[0]
-		args = []string{}
-
-		if len(parts) > 1 {
-			args = parts[1:]
-		}
-	} else {
-		// set command
-		exec = c.Command[0]
-		// set args
-		if len(c.Command) > 1 {
-			args = c.Command[1:]
-		}
+	// set command
+	exec = c.Command[0]
+	// set args
+	if len(c.Command) > 1 {
+		args = c.Command[1:]
 	}
 
 	return &service{
 		Service: s,
 		Process: new(proc.Process),
 		Exec: &process.Executable{
-			Binary: &packager.Binary{
+			Package: &build.Package{
 				Name: s.Name,
 				Path: exec,
 			},
 			Env:  c.Env,
 			Args: args,
 		},
-		closed: make(chan bool),
-		output: c.Output,
+		closed:  make(chan bool),
+		output:  c.Output,
+		updated: time.Now(),
 	}
 }
 

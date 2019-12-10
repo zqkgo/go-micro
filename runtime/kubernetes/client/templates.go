@@ -1,8 +1,8 @@
 package client
 
 var templates = map[string]string{
-	"deployments": deploymentTmpl,
-	"services":    serviceTmpl,
+	"deployment": deploymentTmpl,
+	"service":    serviceTmpl,
 }
 
 var deploymentTmpl = `
@@ -13,6 +13,12 @@ metadata:
   namespace: "{{ .Metadata.Namespace }}"
   labels:
     {{- with .Metadata.Labels }}
+    {{- range $key, $value := . }}
+    {{ $key }}: "{{ $value }}"
+    {{- end }}
+    {{- end }}
+  annotations:
+    {{- with .Metadata.Annotations }}
     {{- range $key, $value := . }}
     {{ $key }}: "{{ $value }}"
     {{- end }}
@@ -30,6 +36,12 @@ spec:
     metadata:
       labels:
         {{- with .Spec.Template.Metadata.Labels }}
+        {{- range $key, $value := . }}
+        {{ $key }}: "{{ $value }}"
+        {{- end }}
+        {{- end }}
+      annotations:
+        {{- with .Spec.Template.Metadata.Annotations }}
         {{- range $key, $value := . }}
         {{ $key }}: "{{ $value }}"
         {{- end }}

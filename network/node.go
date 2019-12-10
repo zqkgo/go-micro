@@ -28,6 +28,8 @@ type node struct {
 	id string
 	// address is node address
 	address string
+	// link on which we communicate with the peer
+	link string
 	// peers are nodes with direct link to this node
 	peers map[string]*node
 	// network returns the node network
@@ -127,7 +129,7 @@ func (n *node) UpdatePeer(peer *node) error {
 
 // RefreshPeer updates node timestamp
 // It returns false if the peer has not been found.
-func (n *node) RefreshPeer(id string, now time.Time) error {
+func (n *node) RefreshPeer(id, link string, now time.Time) error {
 	n.Lock()
 	defer n.Unlock()
 
@@ -135,6 +137,9 @@ func (n *node) RefreshPeer(id string, now time.Time) error {
 	if !ok {
 		return ErrPeerNotFound
 	}
+
+	// set peer link
+	peer.link = link
 
 	if peer.lastSeen.Before(now) {
 		peer.lastSeen = now
@@ -216,7 +221,7 @@ func (n *node) DeletePeerNode(id string) error {
 
 // PruneStalePeerNodes prune the peers that have not been seen for longer than given time
 // It returns a map of the the nodes that got pruned
-func (n *node) PruneStalePeerNodes(pruneTime time.Duration) map[string]*node {
+func (n *node) PruneStalePeers(pruneTime time.Duration) map[string]*node {
 	n.Lock()
 	defer n.Unlock()
 

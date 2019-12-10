@@ -2,24 +2,14 @@
 package client
 
 import (
-	"regexp"
-	"strconv"
 	"strings"
-	"time"
 
 	"github.com/micro/go-micro/util/log"
 )
 
-const (
-	// https://github.com/kubernetes/apimachinery/blob/master/pkg/util/validation/validation.go#L134
-	dns1123LabelFmt string = "[a-z0-9]([-a-z0-9]*[a-z0-9])?"
-)
-
 var (
 	// DefaultImage is default micro image
-	DefaultImage = "micro/micro"
-	// ServiceRegexp is used to validate service name
-	ServiceRegexp = regexp.MustCompile("^" + dns1123LabelFmt + "$")
+	DefaultImage = "micro/go-micro"
 )
 
 // Kubernetes client
@@ -36,19 +26,20 @@ type Kubernetes interface {
 	List(*Resource) error
 }
 
-// DefaultService returns default micro kubernetes service definition
-func DefaultService(name, version string) *Service {
+// NewService returns default micro kubernetes service definition
+func NewService(name, version, typ string) *Service {
+	log.Tracef("kubernetes default service: name: %s, version: %s", name, version)
+
 	Labels := map[string]string{
 		"name":    name,
 		"version": version,
-		"micro":   "service",
+		"micro":   typ,
 	}
 
 	svcName := name
 	if len(version) > 0 {
 		// API service object name joins name and version over "-"
 		svcName = strings.Join([]string{name, version}, "-")
-
 	}
 
 	Metadata := &Metadata{
@@ -72,37 +63,36 @@ func DefaultService(name, version string) *Service {
 	}
 }
 
-// DefaultService returns default micro kubernetes deployment definition
-func DefaultDeployment(name, version string) *Deployment {
+// NewService returns default micro kubernetes deployment definition
+func NewDeployment(name, version, typ string) *Deployment {
+	log.Tracef("kubernetes default deployment: name: %s, version: %s", name, version)
+
 	Labels := map[string]string{
 		"name":    name,
 		"version": version,
-		"micro":   "service",
+		"micro":   typ,
 	}
 
-	// API deployment object name joins name and version over "="
-	depName := strings.Join([]string{name, version}, "-")
+	depName := name
+	if len(version) > 0 {
+		// API deployment object name joins name and version over "-"
+		depName = strings.Join([]string{name, version}, "-")
+	}
 
 	Metadata := &Metadata{
-		Name:      depName,
-		Namespace: "default",
-		Version:   version,
-		Labels:    Labels,
+		Name:        depName,
+		Namespace:   "default",
+		Version:     version,
+		Labels:      Labels,
+		Annotations: map[string]string{},
 	}
 
-	// TODO: we need to figure out this version stuff
-	// might be worth adding Build to runtime.Service
-	buildTime, err := strconv.ParseInt(version, 10, 64)
-	if err == nil {
-		buildUnixTimeUTC := time.Unix(buildTime, 0)
-		Metadata.Annotations = map[string]string{
-			"build": buildUnixTimeUTC.Format(time.RFC3339),
-		}
-	} else {
-		log.Debugf("Runtime could not parse build: %v", err)
+	// enable go modules by default
+	env := EnvVar{
+		Name:  "GO111MODULE",
+		Value: "on",
 	}
 
-	// TODO: change the image name here
 	Spec := &DeploymentSpec{
 		Replicas: 1,
 		Selector: &LabelSelector{
@@ -114,7 +104,7 @@ func DefaultDeployment(name, version string) *Deployment {
 				Containers: []Container{{
 					Name:    name,
 					Image:   DefaultImage,
-					Env:     []EnvVar{},
+					Env:     []EnvVar{env},
 					Command: []string{"go", "run", "main.go"},
 					Ports: []ContainerPort{{
 						Name:          name + "-port",

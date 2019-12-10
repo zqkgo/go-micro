@@ -15,23 +15,21 @@ import (
 
 var (
 	// AdvertiseEventsTick is time interval in which the router advertises route updates
-	AdvertiseEventsTick = 5 * time.Second
+	AdvertiseEventsTick = 10 * time.Second
 	// AdvertiseTableTick is time interval in which router advertises all routes found in routing table
-	AdvertiseTableTick = 1 * time.Minute
-	// AdvertiseFlushTick is time the yet unconsumed advertisements are flush i.e. discarded
-	AdvertiseFlushTick = 15 * time.Second
+	AdvertiseTableTick = 2 * time.Minute
 	// DefaultAdvertTTL is default advertisement TTL
-	DefaultAdvertTTL = 1 * time.Minute
+	DefaultAdvertTTL = 2 * time.Minute
 	// AdvertSuppress is advert suppression threshold
 	AdvertSuppress = 200.0
 	// AdvertRecover is advert recovery threshold
-	AdvertRecover = 120.0
+	AdvertRecover = 20.0
 	// Penalty for routes processed multiple times
 	Penalty = 100.0
 	// PenaltyHalfLife is the time the advert penalty decays to half its value
 	PenaltyHalfLife = 30.0
 	// MaxSuppressTime defines time after which the suppressed advert is deleted
-	MaxSuppressTime = 5 * time.Minute
+	MaxSuppressTime = 90 * time.Second
 	// PenaltyDecay is a coefficient which controls the speed the advert penalty decays
 	PenaltyDecay = math.Log(2) / PenaltyHalfLife
 )
@@ -515,25 +513,28 @@ func (r *router) advertiseEvents() error {
 
 // close closes exit channels
 func (r *router) close() {
-	// notify all goroutines to finish
-	close(r.exit)
-
+	log.Debugf("Router closing remaining channels")
 	// drain the advertise channel only if advertising
 	if r.status.Code == Advertising {
 		// drain the event channel
 		for range r.eventChan {
 		}
 
-		r.sub.RLock()
 		// close advert subscribers
 		for id, sub := range r.subscribers {
+			select {
+			case <-sub:
+			default:
+			}
+
 			// close the channel
 			close(sub)
 
 			// delete the subscriber
+			r.sub.Lock()
 			delete(r.subscribers, id)
+			r.sub.Unlock()
 		}
-		r.sub.RUnlock()
 	}
 
 	// mark the router as Stopped and set its Error to nil
@@ -554,6 +555,9 @@ func (r *router) watchErrors() {
 	defer r.Unlock()
 	// if the router is not stopped, stop it
 	if r.status.Code != Stopped {
+		// notify all goroutines to finish
+		close(r.exit)
+
 		// close all the channels
 		r.close()
 		// set the status error
@@ -713,14 +717,16 @@ func (r *router) Process(a *Advert) error {
 	for _, event := range events {
 		// skip if the router is the origin of this route
 		if event.Route.Router == r.options.Id {
-			log.Debugf("Router skipping processing its own route: %s", r.options.Id)
+			log.Tracef("Router skipping processing its own route: %s", r.options.Id)
 			continue
 		}
 		// create a copy of the route
 		route := event.Route
 		action := event.Type
-		log.Debugf("Router %s applying %s from router %s for service %s %s", r.options.Id, action, route.Router, route.Service, route.Address)
-		if err := r.manageRoute(route, fmt.Sprintf("%s", action)); err != nil {
+
+		log.Tracef("Router %s applying %s from router %s for service %s %s", r.options.Id, action, route.Router, route.Service, route.Address)
+
+		if err := r.manageRoute(route, action.String()); err != nil {
 			return fmt.Errorf("failed applying action %s to routing table: %s", action, err)
 		}
 	}
@@ -795,7 +801,8 @@ func (r *router) flushRouteEvents(evType EventType) ([]*Event, error) {
 
 	// build a list of events to advertise
 	events := make([]*Event, len(bestRoutes))
-	i := 0
+	var i int
+
 	for _, route := range bestRoutes {
 		event := &Event{
 			Type:      evType,
@@ -819,9 +826,10 @@ func (r *router) Solicit() error {
 
 	// advertise the routes
 	r.advertWg.Add(1)
+
 	go func() {
-		defer r.advertWg.Done()
-		r.publishAdvert(RouteUpdate, events)
+		r.publishAdvert(Solicitation, events)
+		r.advertWg.Done()
 	}()
 
 	return nil
@@ -859,13 +867,16 @@ func (r *router) Stop() error {
 		r.Unlock()
 		return r.status.Error
 	case Running, Advertising:
+		// notify all goroutines to finish
+		close(r.exit)
+
 		// close all the channels
 		// NOTE: close marks the router status as Stopped
 		r.close()
 	}
 	r.Unlock()
 
-	log.Debugf("Router waiting for all goroutines to finish")
+	log.Tracef("Router waiting for all goroutines to finish")
 
 	// wait for all goroutines to finish
 	r.wg.Wait()
