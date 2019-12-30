@@ -11,6 +11,14 @@ import (
 )
 
 var (
+	// DefaultPoolMaxStreams maximum streams on a connectioin
+	// (20)
+	DefaultPoolMaxStreams = 20
+
+	// DefaultPoolMaxIdle maximum idle conns of a pool
+	// (50)
+	DefaultPoolMaxIdle = 50
+
 	// DefaultMaxRecvMsgSize maximum message that client can receive
 	// (4 MB).
 	DefaultMaxRecvMsgSize = 1024 * 1024 * 4
@@ -20,6 +28,8 @@ var (
 	DefaultMaxSendMsgSize = 1024 * 1024 * 4
 )
 
+type poolMaxStreams struct{}
+type poolMaxIdle struct{}
 type codecsKey struct{}
 type tlsAuth struct{}
 // new Client()时如果设置了接收消息大小的最大值则context以此为key
@@ -27,6 +37,26 @@ type maxRecvMsgSizeKey struct{}
 type maxSendMsgSizeKey struct{}
 type grpcDialOptions struct{}
 type grpcCallOptions struct{}
+
+// maximum streams on a connectioin
+func PoolMaxStreams(n int) client.Option {
+	return func(o *client.Options) {
+		if o.Context == nil {
+			o.Context = context.Background()
+		}
+		o.Context = context.WithValue(o.Context, poolMaxStreams{}, n)
+	}
+}
+
+// maximum idle conns of a pool
+func PoolMaxIdle(d int) client.Option {
+	return func(o *client.Options) {
+		if o.Context == nil {
+			o.Context = context.Background()
+		}
+		o.Context = context.WithValue(o.Context, poolMaxIdle{}, d)
+	}
+}
 
 // gRPC Codec to be used to encode/decode requests for a given content type
 // 为某种content type内容类型设置编解码方法

@@ -375,6 +375,12 @@ func (s *rpcServer) ServeConn(sock transport.Socket) {
 				pool.Release(psock)
 				// signal we're done
 				wg.Done()
+
+				// recover any panics for outbound process
+				if r := recover(); r != nil {
+					log.Log("panic recovered: ", r)
+					log.Log(string(debug.Stack()))
+				}
 			}()
 
 			for {
@@ -401,6 +407,12 @@ func (s *rpcServer) ServeConn(sock transport.Socket) {
 				pool.Release(psock)
 				// signal we're done
 				wg.Done()
+
+				// recover any panics for call handler
+				if r := recover(); r != nil {
+					log.Log("panic recovered: ", r)
+					log.Log(string(debug.Stack()))
+				}
 			}()
 
 			// serve the actual request using the request router
@@ -829,16 +841,19 @@ func (s *rpcServer) Start() error {
 				s.RLock()
 				registered := s.registered
 				s.RUnlock()
-				if err = s.opts.RegisterCheck(s.opts.Context); err != nil && registered {
+				rerr := s.opts.RegisterCheck(s.opts.Context)
+				if rerr != nil && registered {
 					log.Logf("Server %s-%s register check error: %s, deregister it", config.Name, config.Id, err)
 					// deregister self in case of error
 					if err := s.Deregister(); err != nil {
 						log.Logf("Server %s-%s deregister error: %s", config.Name, config.Id, err)
 					}
-				} else {
-					if err := s.Register(); err != nil {
-						log.Logf("Server %s-%s register error: %s", config.Name, config.Id, err)
-					}
+				} else if rerr != nil && !registered {
+					log.Logf("Server %s-%s register check error: %s", config.Name, config.Id, err)
+					continue
+				}
+				if err := s.Register(); err != nil {
+					log.Logf("Server %s-%s register error: %s", config.Name, config.Id, err)
 				}
 			// wait for exit
 			case ch = <-s.exit:
@@ -848,9 +863,14 @@ func (s *rpcServer) Start() error {
 			}
 		}
 
-		// deregister self
-		if err := s.Deregister(); err != nil {
-			log.Logf("Server %s-%s deregister error: %s", config.Name, config.Id, err)
+		s.RLock()
+		registered := s.registered
+		s.RUnlock()
+		if registered {
+			// deregister self
+			if err := s.Deregister(); err != nil {
+				log.Logf("Server %s-%s deregister error: %s", config.Name, config.Id, err)
+			}
 		}
 
 		s.Lock()

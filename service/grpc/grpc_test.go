@@ -5,9 +5,10 @@ import (
 	"crypto/tls"
 	"sync"
 	"testing"
+	"time"
 
-	"github.com/micro/go-micro"
 	"github.com/micro/go-micro/registry/memory"
+	"github.com/micro/go-micro/service"
 	hello "github.com/micro/go-micro/service/grpc/proto"
 	mls "github.com/micro/go-micro/util/tls"
 )
@@ -31,23 +32,23 @@ func TestGRPCService(t *testing.T) {
 
 	// create GRPC service
 	service := NewService(
-		micro.Name("test.service"),
-		micro.Registry(r),
-		micro.AfterStart(func() error {
+		service.Name("test.service"),
+		service.Registry(r),
+		service.AfterStart(func() error {
 			wg.Done()
 			return nil
 		}),
-		micro.Context(ctx),
+		service.Context(ctx),
 	)
 
 	// register test handler
 	hello.RegisterTestHandler(service.Server(), &testHandler{})
 
 	// run service
+	errCh := make(chan error, 1)
 	go func() {
-		if err := service.Run(); err != nil {
-			t.Fatal(err)
-		}
+		defer close(errCh)
+		errCh <- service.Run()
 	}()
 
 	// wait for start
@@ -57,55 +58,21 @@ func TestGRPCService(t *testing.T) {
 	test := hello.NewTestService("test.service", service.Client())
 
 	// call service
-	rsp, err := test.Call(context.Background(), &hello.Request{
+	ctx2, cancel2 := context.WithTimeout(context.Background(), time.Duration(time.Second))
+	defer cancel2()
+	rsp, err := test.Call(ctx2, &hello.Request{
 		Name: "John",
 	})
 	if err != nil {
 		t.Fatal(err)
 	}
 
-	// check message
-	if rsp.Msg != "Hello John" {
-		t.Fatalf("unexpected response %s", rsp.Msg)
-	}
-}
-
-func TestGRPCFunction(t *testing.T) {
-	var wg sync.WaitGroup
-	wg.Add(1)
-
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
-
-	// create service
-	fn := NewFunction(
-		micro.Name("test.function"),
-		micro.Registry(memory.NewRegistry()),
-		micro.AfterStart(func() error {
-			wg.Done()
-			return nil
-		}),
-		micro.Context(ctx),
-	)
-
-	// register test handler
-	hello.RegisterTestHandler(fn.Server(), &testHandler{})
-
-	// run service
-	go fn.Run()
-
-	// wait for start
-	wg.Wait()
-
-	// create client
-	test := hello.NewTestService("test.function", fn.Client())
-
-	// call service
-	rsp, err := test.Call(context.Background(), &hello.Request{
-		Name: "John",
-	})
-	if err != nil {
+	// check server
+	select {
+	case err := <-errCh:
 		t.Fatal(err)
+	case <-time.After(time.Second):
+		break
 	}
 
 	// check message
@@ -136,13 +103,13 @@ func TestGRPCTLSService(t *testing.T) {
 
 	// create GRPC service
 	service := NewService(
-		micro.Name("test.service"),
-		micro.Registry(r),
-		micro.AfterStart(func() error {
+		service.Name("test.service"),
+		service.Registry(r),
+		service.AfterStart(func() error {
 			wg.Done()
 			return nil
 		}),
-		micro.Context(ctx),
+		service.Context(ctx),
 		// set TLS config
 		WithTLS(config),
 	)
@@ -151,10 +118,10 @@ func TestGRPCTLSService(t *testing.T) {
 	hello.RegisterTestHandler(service.Server(), &testHandler{})
 
 	// run service
+	errCh := make(chan error, 1)
 	go func() {
-		if err := service.Run(); err != nil {
-			t.Fatal(err)
-		}
+		defer close(errCh)
+		errCh <- service.Run()
 	}()
 
 	// wait for start
@@ -164,11 +131,21 @@ func TestGRPCTLSService(t *testing.T) {
 	test := hello.NewTestService("test.service", service.Client())
 
 	// call service
-	rsp, err := test.Call(context.Background(), &hello.Request{
+	ctx2, cancel2 := context.WithTimeout(context.Background(), time.Duration(time.Second))
+	defer cancel2()
+	rsp, err := test.Call(ctx2, &hello.Request{
 		Name: "John",
 	})
 	if err != nil {
 		t.Fatal(err)
+	}
+
+	// check server
+	select {
+	case err := <-errCh:
+		t.Fatal(err)
+	case <-time.After(time.Second):
+		break
 	}
 
 	// check message

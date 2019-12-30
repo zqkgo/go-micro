@@ -182,8 +182,7 @@ func validateSubscriber(sub server.Subscriber) error {
 
 // 构造一个handler，注册到broker，当消息到达时会调用该handelr。
 func (g *grpcServer) createSubHandler(sb *subscriber, opts server.Options) broker.Handler {
-	return func(p broker.Event) error {
-		var err error
+	return func(p broker.Event) (err error) {
 
 		defer func() {
 			if r := recover(); r != nil {

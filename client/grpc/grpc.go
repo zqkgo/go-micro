@@ -12,12 +12,10 @@ import (
 	"github.com/micro/go-micro/broker"
 	"github.com/micro/go-micro/client"
 	"github.com/micro/go-micro/client/selector"
-	"github.com/micro/go-micro/codec"
 	raw "github.com/micro/go-micro/codec/bytes"
 	"github.com/micro/go-micro/errors"
 	"github.com/micro/go-micro/metadata"
 	"github.com/micro/go-micro/registry"
-	"github.com/micro/go-micro/transport"
 
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials"
@@ -255,6 +253,28 @@ func (g *grpcClient) stream(ctx context.Context, node *registry.Node, req client
 		stream:   st,
 		conn:     cc,
 	}, nil
+}
+
+func (g *grpcClient) poolMaxStreams() int {
+	if g.opts.Context == nil {
+		return DefaultPoolMaxStreams
+	}
+	v := g.opts.Context.Value(poolMaxStreams{})
+	if v == nil {
+		return DefaultPoolMaxStreams
+	}
+	return v.(int)
+}
+
+func (g *grpcClient) poolMaxIdle() int {
+	if g.opts.Context == nil {
+		return DefaultPoolMaxIdle
+	}
+	v := g.opts.Context.Value(poolMaxIdle{})
+	if v == nil {
+		return DefaultPoolMaxIdle
+	}
+	return v.(int)
 }
 
 func (g *grpcClient) maxRecvMsgSizeValue() int {
@@ -630,52 +650,21 @@ func (g *grpcClient) getGrpcCallOptions() []grpc.CallOption {
 }
 
 func newClient(opts ...client.Option) client.Client {
-	options := client.Options{
-		Codecs: make(map[string]codec.NewCodec),
-		// 和请求相关的配置项
-		CallOptions: client.CallOptions{
-			Backoff:        client.DefaultBackoff,
-			Retry:          client.DefaultRetry,
-			Retries:        client.DefaultRetries,
-			RequestTimeout: client.DefaultRequestTimeout,
-			DialTimeout:    transport.DefaultDialTimeout,
-		},
-		PoolSize: client.DefaultPoolSize,
-		PoolTTL:  client.DefaultPoolTTL,
-	}
+	options := client.NewOptions()
+	// default content type for grpc
+	options.ContentType = "application/grpc+proto"
 
 	// 调用可修改Options的函数参数
 	for _, o := range opts {
 		o(&options)
 	}
 
-	// 检查配置项如果没设置则赋默认值
-	if len(options.ContentType) == 0 {
-		options.ContentType = "application/grpc+proto"
-	}
-
-	// 没有配置组件则使用默认实现
-	if options.Broker == nil {
-		options.Broker = broker.DefaultBroker
-	}
-
-	if options.Registry == nil {
-		options.Registry = registry.DefaultRegistry
-	}
-
-	// 如果参数没指定selector则使用默认实现
-	// 如果命令行指定了selector则此时虽然是默认实现，但会被cmd更新成命令行配置项
-	if options.Selector == nil {
-		options.Selector = selector.NewSelector(
-			selector.Registry(options.Registry),
-		)
-	}
-
 	rc := &grpcClient{
 		once: sync.Once{},
 		opts: options,
-		pool: newPool(options.PoolSize, options.PoolTTL),
 	}
+
+	rc.pool = newPool(options.PoolSize, options.PoolTTL, rc.poolMaxIdle(), rc.poolMaxStreams())
 
 	c := client.Client(rc)
 

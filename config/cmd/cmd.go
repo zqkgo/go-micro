@@ -29,6 +29,7 @@ import (
 	"github.com/micro/go-micro/registry"
 	"github.com/micro/go-micro/registry/etcd"
 	"github.com/micro/go-micro/registry/mdns"
+	kreg "github.com/micro/go-micro/registry/kubernetes"
 	rmem "github.com/micro/go-micro/registry/memory"
 	regSrv "github.com/micro/go-micro/registry/service"
 
@@ -196,15 +197,13 @@ var (
 	}
 
 	DefaultBrokers = map[string]func(...broker.Option) broker.Broker{
-		"go.micro.broker": brokerSrv.NewBroker,
-		"service":         brokerSrv.NewBroker,
-		"http":            http.NewBroker,
-		"memory":          memory.NewBroker,
-		"nats":            nats.NewBroker,
+		"service": brokerSrv.NewBroker,
+		"http":    http.NewBroker,
+		"memory":  memory.NewBroker,
+		"nats":    nats.NewBroker,
 	}
 
 	DefaultClients = map[string]func(...client.Option) client.Client{
-		"rpc":  client.NewClient,
 		"mucp": cmucp.NewClient,
 		"grpc": cgrpc.NewClient,
 	}
@@ -212,11 +211,11 @@ var (
 	// 每种组件维护一个map，存储命令行参数值到实例的映射
 	// 例如，如果指定--registry=consul，则使用consul.NewRegistry返回的实例
 	DefaultRegistries = map[string]func(...registry.Option) registry.Registry{
-		"go.micro.registry": regSrv.NewRegistry,
-		"service":           regSrv.NewRegistry,
-		"etcd":              etcd.NewRegistry,
-		"mdns":              mdns.NewRegistry,
-		"memory":            rmem.NewRegistry,
+		"service": regSrv.NewRegistry,
+		"etcd":    etcd.NewRegistry,
+		"mdns":    mdns.NewRegistry,
+		"memory":  rmem.NewRegistry,
+		"kubernetes": kreg.NewRegistry,
 	}
 
 	DefaultSelectors = map[string]func(...selector.Option) selector.Selector{
@@ -228,7 +227,6 @@ var (
 	}
 
 	DefaultServers = map[string]func(...server.Option) server.Server{
-		"rpc":  server.NewServer,
 		"mucp": smucp.NewServer,
 		"grpc": sgrpc.NewServer,
 	}
@@ -246,8 +244,8 @@ var (
 	}
 
 	// used for default selection as the fall back
-	defaultClient    = "rpc"
-	defaultServer    = "rpc"
+	defaultClient    = "grpc"
+	defaultServer    = "grpc"
 	defaultBroker    = "http"
 	defaultRegistry  = "mdns"
 	defaultSelector  = "registry"
